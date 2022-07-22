@@ -103,7 +103,11 @@ summary(ES_Zscores_df)
 
 dim(ES_Zscores_df)
 
+rm(list= ls()[!(ls() %in% c("PRAs","ES_Zscores","ES_Zscores_df"))])
+
+
 write.csv(ES_Zscores_df,file = "processed_datasets/ES_ZScores_PRAs.csv")
-writeRaster(ES_Zscores,"processed_datasets/ES_ZScores_PRAs.grd", format="raster")
+
+save.image(file = "processed_datasets/ES_ZScores_PRAs_Spatial_Layers.RData")
 ```
 

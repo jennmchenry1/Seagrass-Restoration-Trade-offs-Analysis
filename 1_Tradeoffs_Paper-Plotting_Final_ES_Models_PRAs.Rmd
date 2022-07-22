@@ -1,5 +1,5 @@
 ---
-title: "Seagrass Restoration Trade-offs Paper - Spatial Analysis & Plotting"
+title: "1. Seagrass Restoration Trade-offs Paper - Spatial Analysis & Plotting"
 author: "Jennifer McHenry"
 date: "07/21/2022"
 output: 
@@ -16,33 +16,26 @@ output:
 knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.pos = "H", out.extra = "")
 
 #Load Libraries
-
 library(tidyverse)
+library(raster)
 library(RColorBrewer)
-library(mgcv)
-library(tools)
 library(viridis)
 library(ggpubr)
 # library(ggsn)
-library(remotes)
-library(raster)
+# library(remotes)
 # remotes::install_version("Rttf2pt1", version = "1.3.8")
-library(extrafont)
-library(ggcorrplot)
+# library(extrafont)
+# library(ggcorrplot)
 # extrafont::font_import() 
-loadfonts("win")
-library(ggplot2)
-library(corrplot)
-library(colorspace)
-library(rgeos)
+# loadfonts("win")
+# library(ggplot2)
+# library(corrplot)
+# library(colorspace)
+# library(rgeos)
 
 #Load Functions 
 pal_teal_blue_purple <- rainbow(12)
 
-odds_to_prob=function(x){
-        prob<-exp(x)/(1+exp(x))
-        return(prob)
-}
 
 #Setting Directory Paths
 wd=getwd()
@@ -56,8 +49,7 @@ Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disserat
 ```{r}
 
 #Loading Data
-
-
+load("processed_datasets/ES_ZScores_PRAs_Spatial_Layers.RData")
 
 #Notes:
 #SL - "Pairwise plots for every service combination: We’ve already looked at correlations, but these plots could allow us to look at the shape of the relationship and see whether there are opportunities for service “win-wins” even for negatively associated services (e.g. coastal protection and blue carbon)"
