@@ -54,6 +54,12 @@ Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disserat
 
 # Visualizing Tradeoffs  plots of services 
 ```{r}
+
+#Loading Data
+
+
+
+#Notes:
 #SL - "Pairwise plots for every service combination: We’ve already looked at correlations, but these plots could allow us to look at the shape of the relationship and see whether there are opportunities for service “win-wins” even for negatively associated services (e.g. coastal protection and blue carbon)"
 
   #Hectare Scale
