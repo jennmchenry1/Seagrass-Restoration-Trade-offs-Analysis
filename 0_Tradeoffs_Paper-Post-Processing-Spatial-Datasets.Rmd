@@ -1,5 +1,5 @@
 ---
-title: "0_Tradeoffs_Paper-Post-Processing-Spatial-Datasets"
+title: "0. eagrass Restoration STradeoffs Paper - Post Processing Spatial Datasets"
 author: "Jennifer McHenry"
 date: "7/21/2022"
 output: html_document
