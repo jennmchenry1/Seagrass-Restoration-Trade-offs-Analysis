@@ -19,6 +19,8 @@ library(ggpubr)
 # library(ggsn)
 library(remotes)
 library(raster)
+library(sp)
+library(rgdal)
 # remotes::install_version("Rttf2pt1", version = "1.3.8")
 library(extrafont)
 library(ggcorrplot)
@@ -46,10 +48,13 @@ Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disserat
 
 ```
 
-```{r}
 #LOADING DATASETS FOR THE ANALYSIS 
 
-#SEAGRASS LAYERS#######################################################################################################################
+```{r}
+
+#SEAGRASS LAYERS######################################################################################
+# Study area
+study_area<-raster("input_data/study_area.tif")
 
 #Total Predicted_Seagrass
 Seagrass_Cover=raster(paste(Saved_RData_Dir,"Modeling_Biodiversity_Enhancement_Value/model_output/August_2020_seagrassmodel_predictions/Annual_Predictions/Seagrass_Cover_MeanAnnual_Current_Corrected_CorExp.tif",sep=""))
@@ -57,57 +62,134 @@ names(Seagrass_Cover)<-c("Seagrass_Cover")
 
 Total_Predicted_Seagrass=Seagrass_Cover
 Total_Predicted_Seagrass[Total_Predicted_Seagrass<5]<-NA
-Total_Predicted_Seagrass[Total_Predicted_Seagrass>=5]<-0
+Total_Predicted_Seagrass[Total_Predicted_Seagrass>=5]<-1
 
-# Study area
-study_area<-raster("input_data/study_area.tif")
+Total_Predicted_Seagrass=mask(Total_Predicted_Seagrass,mask=study_area)
 
-#masking the seagrass datasets
-Total_Predicted_Seagrass=mask(Total_Predicted_Seagrass,mask = study_area)
+world_crs <- '+proj=longlat +datum=WGS84 +no_defs '
+
+newproj <- '+proj=utm +zone=15 +ellps=GRS80 +datum=NAD83 +units=m +no_defs'
+
+#creating a template for two scale analysis
+Total_Predicted_Seagrass_1HA <- raster::projectRaster(from=Total_Predicted_Seagrass, crs=newproj, res=100,method = "bilinear")
+
+Total_Predicted_Seagrass_1HA[is.na(Total_Predicted_Seagrass_1HA)!=TRUE]<-1
+
+Total_Predicted_Seagrass_1KM <-aggregate(Total_Predicted_Seagrass_1HA, fact=10, fun=mean)
+
+
+Total_Predicted_Seagrass_1HA_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_1HA,crs=world_crs)
+
+
+Total_Predicted_Seagrass_1KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_1KM,crs=world_crs)
+
+
 
 #Confirmed Seagrass Areas
+Confirmed=raster("C:/Users/Jennifer/Dropbox/GITHUB/Disseratation/Modeling-Spatial-Variability-of-Ecosystem-Services-from-FLSeagrassBeds/input_data/seagrass_area_masks/confirmed_seagrass_beds.tif")
+Confirmed=mask(Confirmed,mask = study_area)
+
+#Potential recovery areas
 PRAs=raster("input_data/seagrass_area_masks/potential_recovery_area.tif")
 PRAs=mask(PRAs,mask = study_area)
+```
 
-Seagrass_Cover_PRAs=mask(Seagrass_Cover,mask=PRAs)
+# LOADING ECOSYSTEM SERVICE LAYERS - Confirmed Vs PRAs
 
-
-#loading regions raster
-FCMap=raster("input_data/FCMaP_Workshop_Regions/FCMaP.tif")
-FCMap=resample(x=FCMap,y = study_area,method="ngb")
-
-
-#ECOSYSTEM SERVICE LAYERS##############################################################################################################
-
+```{r}
+# Confirmed
 #Loading ES Outputs (Standarized)
-BioDiv_EV=raster("input_data/ES-Model-Outputs/BioDiv_EV_Zscores_PRAs.tif")
-NurHab_EV=raster("input_data/ES-Model-Outputs/NursHab_EV_Zscores_PRAs.tif")
-Gray_Snapper_EV=raster("input_data/ES-Model-Outputs/Gray_Snapper_EV_Zscores_PRAs.tif")
-Lane_Snapper_EV=raster("input_data/ES-Model-Outputs/Lane_Snapper_EV_Zscores_PRAs.tif")
-White_Grunt_EV=raster("input_data/ES-Model-Outputs/White_Grunt_EV_Zscores_PRAs.tif")
-Spotted_Seatrout_EV=raster("input_data/ES-Model-Outputs/Spotted_Seatrout_EV_Zscores_PRAs.tif")
-Sheepshead_EV=raster("input_data/ES-Model-Outputs/Sheepshead_EV_Zscores_PRAs.tif")
-Pink_Shrimp_EV=raster("input_data/ES-Model-Outputs/Pink_Shrimp_EV_Zscores_PRAs.tif")
-BlueCar_EV=raster("input_data/ES-Model-Outputs/BC_Storage_EV_Zscores_PRAs.tif")
-RecTour_EV=raster("input_data/ES-Model-Outputs/Rec_EV_Zscores_PRAs.tif")
-Expos_EV=raster("input_data/ES-Model-Outputs/Exposure_EV_Zscores_PRAs.tif")
-Pop_EV=raster("input_data/ES-Model-Outputs/Population_EV_Zscores_PRAs.tif")
+BioDiv_EV_Confirmed=raster("C:/Users/Jennifer/Dropbox/GITHUB/Disseratation/Modeling-Spatial-Variability-of-Ecosystem-Services-from-FLSeagrassBeds/input_data/ES-Model-Outputs/BioDiv_EV_Zscores_Confirmed.tif")
+NurHab_EV_Confirmed=raster("C:/Users/Jennifer/Dropbox/GITHUB/Disseratation/Modeling-Spatial-Variability-of-Ecosystem-Services-from-FLSeagrassBeds/input_data/ES-Model-Outputs/NursHab_EV_Zscores_Confirmed.tif")
+BlueCar_EV_Confirmed=raster("C:/Users/Jennifer/Dropbox/GITHUB/Disseratation/Modeling-Spatial-Variability-of-Ecosystem-Services-from-FLSeagrassBeds/input_data/ES-Model-Outputs/BC_Storage_EV_Zscores_Confirmed.tif")
+RecTour_EV_Confirmed=raster("C:/Users/Jennifer/Dropbox/GITHUB/Disseratation/Modeling-Spatial-Variability-of-Ecosystem-Services-from-FLSeagrassBeds/input_data/ES-Model-Outputs/Rec_EV_Zscores_Confirmed.tif")
+Expos_EV_Confirmed=raster("C:/Users/Jennifer/Dropbox/GITHUB/Disseratation/Modeling-Spatial-Variability-of-Ecosystem-Services-from-FLSeagrassBeds/input_data/ES-Model-Outputs/Exposure_EV_Zscores_Confirmed.tif")
 
-ES_Zscores=stack(FCMap,Seagrass_Cover_PRAs,BioDiv_EV,NurHab_EV,Gray_Snapper_EV,Lane_Snapper_EV,White_Grunt_EV,Spotted_Seatrout_EV,Sheepshead_EV,Pink_Shrimp_EV,BlueCar_EV,RecTour_EV,Expos_EV,Pop_EV)
+ES_Zscores=stack(BioDiv_EV_Confirmed,NurHab_EV_Confirmed,BlueCar_EV_Confirmed,RecTour_EV_Confirmed,Expos_EV_Confirmed)
 
-ES_Zscores=mask(ES_Zscores,mask=PRAs)
-ES_Zscores_df=as.data.frame(rasterToPoints(ES_Zscores))
-names(ES_Zscores_df)<-c("x","y","Regions","Seagrass_Cover","BioDiv","NurHab","Gray_Snapper","Lane_Snapper","White_Grunt","Spotted_Seatrout","Sheepshead","Pink_Shrimp","BlueCar","RecTour","Expos","Pop")
-ES_Zscores_df<-ES_Zscores_df[complete.cases(ES_Zscores_df),]
-summary(ES_Zscores_df)
-
-dim(ES_Zscores_df)
-
-rm(list= ls()[!(ls() %in% c("PRAs","ES_Zscores","ES_Zscores_df"))])
+ES_Zscores_Confirmed=mask(ES_Zscores,mask=Confirmed)
 
 
-write.csv(ES_Zscores_df,file = "processed_datasets/ES_ZScores_PRAs.csv")
+# Potential Recovery Areas
+#Loading ES Outputs (Standarized)
+BioDiv_EV_PRAs=raster("input_data/ES-Model-Outputs/BioDiv_EV_Zscores_PRAs.tif")
+NurHab_EV_PRAs=raster("input_data/ES-Model-Outputs/NursHab_EV_Zscores_PRAs.tif")
+BlueCar_EV_PRAs=raster("input_data/ES-Model-Outputs/BC_Storage_EV_Zscores_PRAs.tif")
+RecTour_EV_PRAs=raster("input_data/ES-Model-Outputs/Rec_EV_Zscores_PRAs.tif")
+Expos_EV_PRAs=raster("input_data/ES-Model-Outputs/Exposure_EV_Zscores_PRAs.tif")
+Pop_EV_PRAs=raster("input_data/ES-Model-Outputs/Population_EV_Zscores_PRAs.tif")
 
+ES_Zscores_PRAs=stack(BioDiv_EV_PRAs,NurHab_EV_PRAs,BlueCar_EV_PRAs,RecTour_EV_PRAs,Expos_EV_PRAs)
+ES_Zscores_PRAs=mask(ES_Zscores_PRAs,mask=PRAs)
+
+```
+
+# Parsing out two differnt sizes.
+```{r}
+# 1-hectare analysis stack
+ES_Zscores_Confirmed_1HA<-resample(x= ES_Zscores_Confirmed, y=Total_Predicted_Seagrass_1HA_WGS)
+
+ES_Zscores_Confirmed_1HA_df=as.data.frame(rasterToPoints(ES_Zscores_Confirmed_1HA))
+names(ES_Zscores_Confirmed_1HA_df)<-c("x","y","BioDiv","NurHab","BlueCar","RecTour","Expos")
+ES_Zscores_Confirmed_1HA_df<-ES_Zscores_Confirmed_1HA_df[complete.cases(ES_Zscores_Confirmed_1HA_df),]
+summary(ES_Zscores_Confirmed_1HA_df)
+
+ES_Zscores_PRAs_1HA<-resample(x= ES_Zscores_PRAs, y=Total_Predicted_Seagrass_1HA_WGS)
+
+ES_Zscores_PRAs_1HA_df=as.data.frame(rasterToPoints(ES_Zscores_PRAs_1HA))
+names(ES_Zscores_PRAs_1HA_df)<-c("x","y","BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+ES_Zscores_PRAs_1HA_df<-ES_Zscores_PRAs_1HA_df[complete.cases(ES_Zscores_PRAs_1HA_df),]
+summary(ES_Zscores_PRAs_1HA_df)
+
+
+# 1-kilometer analysis stack
+ES_Zscores_Confirmed_1KM<-resample(x= ES_Zscores_Confirmed, y=Total_Predicted_Seagrass_1KM_WGS)
+
+ES_Zscores_Confirmed_1KM_df=as.data.frame(rasterToPoints(ES_Zscores_Confirmed_1KM))
+names(ES_Zscores_Confirmed_1KM_df)<-c("x","y","BioDiv","NurHab","BlueCar","RecTour","Expos")
+ES_Zscores_Confirmed_1KM_df<-ES_Zscores_Confirmed_1KM_df[complete.cases(ES_Zscores_Confirmed_1KM_df),]
+summary(ES_Zscores_Confirmed_1KM_df)
+
+ES_Zscores_PRAs_1KM<-resample(x= ES_Zscores_PRAs, y=Total_Predicted_Seagrass_1KM_WGS)
+
+ES_Zscores_PRAs_1KM_df=as.data.frame(rasterToPoints(ES_Zscores_PRAs_1KM))
+names(ES_Zscores_PRAs_1KM_df)<-c("x","y","BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+ES_Zscores_PRAs_1KM_df<-ES_Zscores_PRAs_1KM_df[complete.cases(ES_Zscores_PRAs_1KM_df),]
+summary(ES_Zscores_PRAs_1KM_df)
+
+```
+
+
+# Saving output
+```{r}
+rm(list= ls()[!(ls() %in% c("Total_Predicted_Seagrass","PRAs","Confirmed","Total_Predicted_Seagrass_1HA_WGS","Total_Predicted_Seagrass_1KM_WGS","ES_Zscores_PRAs_1HA","ES_Zscores_PRAs_1HA_df","ES_Zscores_Confirmed_1HA","ES_Zscores_Confirmed_1HA_df","ES_Zscores_PRAs_1KM","ES_Zscores_PRAs_1KM_df","ES_Zscores_Confirmed_1KM","ES_Zscores_Confirmed_1KM_df"))])
+
+writeRaster(PRAs,file="processed_datasets/PRAs.tif",overwrite=TRUE)
+writeRaster(Confirmed,file="processed_datasets/Confirmed_Beds.tif",overwrite=TRUE)
+writeRaster(Total_Predicted_Seagrass,file="processed_datasets/Total_Predicted_Seagrass.tif",overwrite=TRUE)
+writeRaster(Total_Predicted_Seagrass_1HA_WGS,file="processed_datasets/Total_Predicted_Seagrass_1HA_WGS.tif",overwrite=TRUE)
+writeRaster(Total_Predicted_Seagrass_1KM_WGS,file="processed_datasets/Total_Predicted_Seagrass_1KM_WGS.tif",overwrite=TRUE)
+
+# 1- HECTARE OUTPUT
+write.csv(ES_Zscores_PRAs_1HA_df,file = "processed_datasets/ES_Zscores_PRAs_1HA.csv")
+# 
+writeRaster(ES_Zscores_PRAs_1HA,file=paste("processed_datasets/",names(ES_Zscores_PRAs_1HA),"_1HA.tif",sep=""),bylayer=TRUE, overwrite=TRUE)
+
+write.csv(ES_Zscores_Confirmed_1HA_df,file = "processed_datasets/ES_ZScores_Confirmed_1HA.csv")
+# 
+writeRaster(ES_Zscores_Confirmed_1HA,file=paste("processed_datasets/",names(ES_Zscores_Confirmed_1HA),"_1HA.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
+# 1- SQKM OUTPUT
+write.csv(ES_Zscores_PRAs_1KM_df,file = "processed_datasets/ES_Zscores_PRAs_1KM.csv")
+# 
+writeRaster(ES_Zscores_PRAs_1KM,file=paste("processed_datasets/",names(ES_Zscores_PRAs_1KM),"_1KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
+write.csv(ES_Zscores_Confirmed_1KM_df,file = "processed_datasets/ES_ZScores_Confirmed_1KM.csv")
+# 
+writeRaster(ES_Zscores_Confirmed_1KM,file=paste("processed_datasets/",names(ES_Zscores_Confirmed_1KM),"_1KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
+
+# 
 save.image(file = "processed_datasets/ES_ZScores_PRAs_Spatial_Layers.RData")
 ```
 
