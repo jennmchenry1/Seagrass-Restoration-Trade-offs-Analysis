@@ -77,12 +77,19 @@ Total_Predicted_Seagrass_1HA[is.na(Total_Predicted_Seagrass_1HA)!=TRUE]<-1
 
 Total_Predicted_Seagrass_1KM <-aggregate(Total_Predicted_Seagrass_1HA, fact=10, fun=mean)
 
+Total_Predicted_Seagrass_5KM <-aggregate(Total_Predicted_Seagrass_1KM, fact=5, fun=mean)
 
+Total_Predicted_Seagrass_10KM <-aggregate(Total_Predicted_Seagrass_1KM, fact=10, fun=mean)
+
+
+#finalizing the raster version
 Total_Predicted_Seagrass_1HA_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_1HA,crs=world_crs)
-
 
 Total_Predicted_Seagrass_1KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_1KM,crs=world_crs)
 
+Total_Predicted_Seagrass_5KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_5KM,crs=world_crs)
+
+Total_Predicted_Seagrass_10KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_10KM,crs=world_crs)
 
 
 #Confirmed Seagrass Areas
@@ -157,12 +164,42 @@ names(ES_Zscores_PRAs_1KM_df)<-c("x","y","BioDiv_PRAs","NurHab_PRAs","BlueCar_PR
 ES_Zscores_PRAs_1KM_df<-ES_Zscores_PRAs_1KM_df[complete.cases(ES_Zscores_PRAs_1KM_df),]
 summary(ES_Zscores_PRAs_1KM_df)
 
+# 5-kilometer analysis stack
+ES_Zscores_Confirmed_5KM<-resample(x= ES_Zscores_Confirmed, y=Total_Predicted_Seagrass_5KM_WGS)
+
+ES_Zscores_Confirmed_5KM_df=as.data.frame(rasterToPoints(ES_Zscores_Confirmed_5KM))
+names(ES_Zscores_Confirmed_5KM_df)<-c("x","y","BioDiv","NurHab","BlueCar","RecTour","Expos")
+ES_Zscores_Confirmed_5KM_df<-ES_Zscores_Confirmed_5KM_df[complete.cases(ES_Zscores_Confirmed_5KM_df),]
+summary(ES_Zscores_Confirmed_5KM_df)
+
+ES_Zscores_PRAs_5KM<-resample(x= ES_Zscores_PRAs, y=Total_Predicted_Seagrass_5KM_WGS)
+
+ES_Zscores_PRAs_5KM_df=as.data.frame(rasterToPoints(ES_Zscores_PRAs_5KM))
+names(ES_Zscores_PRAs_5KM_df)<-c("x","y","BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+ES_Zscores_PRAs_5KM_df<-ES_Zscores_PRAs_5KM_df[complete.cases(ES_Zscores_PRAs_5KM_df),]
+summary(ES_Zscores_PRAs_5KM_df)
+
+# 10-kilometer analysis stack
+ES_Zscores_Confirmed_10KM<-resample(x= ES_Zscores_Confirmed, y=Total_Predicted_Seagrass_10KM_WGS)
+
+ES_Zscores_Confirmed_10KM_df=as.data.frame(rasterToPoints(ES_Zscores_Confirmed_10KM))
+names(ES_Zscores_Confirmed_10KM_df)<-c("x","y","BioDiv","NurHab","BlueCar","RecTour","Expos")
+ES_Zscores_Confirmed_10KM_df<-ES_Zscores_Confirmed_5KM_df[complete.cases(ES_Zscores_Confirmed_10KM_df),]
+summary(ES_Zscores_Confirmed_10KM_df)
+
+ES_Zscores_PRAs_10KM<-resample(x= ES_Zscores_PRAs, y=Total_Predicted_Seagrass_10KM_WGS)
+
+ES_Zscores_PRAs_10KM_df=as.data.frame(rasterToPoints(ES_Zscores_PRAs_10KM))
+names(ES_Zscores_PRAs_10KM_df)<-c("x","y","BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+ES_Zscores_PRAs_10KM_df<-ES_Zscores_PRAs_10KM_df[complete.cases(ES_Zscores_PRAs_10KM_df),]
+summary(ES_Zscores_PRAs_10KM_df)
+
 ```
 
 
 # Saving output
 ```{r}
-rm(list= ls()[!(ls() %in% c("Total_Predicted_Seagrass","PRAs","Confirmed","Total_Predicted_Seagrass_1HA_WGS","Total_Predicted_Seagrass_1KM_WGS","ES_Zscores_PRAs_1HA","ES_Zscores_PRAs_1HA_df","ES_Zscores_Confirmed_1HA","ES_Zscores_Confirmed_1HA_df","ES_Zscores_PRAs_1KM","ES_Zscores_PRAs_1KM_df","ES_Zscores_Confirmed_1KM","ES_Zscores_Confirmed_1KM_df"))])
+rm(list= ls()[!(ls() %in% c("Total_Predicted_Seagrass","PRAs","Confirmed","Total_Predicted_Seagrass_1HA_WGS","Total_Predicted_Seagrass_1KM_WGS","Total_Predicted_Seagrass_5KM_WGS","Total_Predicted_Seagrass_10KM_WGS","ES_Zscores_PRAs_1HA","ES_Zscores_PRAs_1HA_df","ES_Zscores_Confirmed_1HA","ES_Zscores_Confirmed_1HA_df","ES_Zscores_PRAs_1KM","ES_Zscores_PRAs_1KM_df","ES_Zscores_Confirmed_1KM","ES_Zscores_Confirmed_1KM_df", "ES_Zscores_Confirmed_5KM", "ES_Zscores_Confirmed_5KM_df","ES_Zscores_PRAs_5KM","ES_Zscores_PRAs_5KM_df", "ES_Zscores_PRAs_10KM", "ES_Zscores_PRAs_10KM_df", "ES_Zscores_Confirmed_10KM","ES_Zscores_Confirmed_10KM_df"))])
 
 writeRaster(PRAs,file="processed_datasets/PRAs.tif",overwrite=TRUE)
 writeRaster(Confirmed,file="processed_datasets/Confirmed_Beds.tif",overwrite=TRUE)
@@ -188,8 +225,25 @@ write.csv(ES_Zscores_Confirmed_1KM_df,file = "processed_datasets/ES_ZScores_Conf
 # 
 writeRaster(ES_Zscores_Confirmed_1KM,file=paste("processed_datasets/",names(ES_Zscores_Confirmed_1KM),"_1KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
 
-
+# 5- SQKM OUTPUT
+write.csv(ES_Zscores_PRAs_5KM_df,file = "processed_datasets/ES_Zscores_PRAs_5KM.csv")
 # 
+writeRaster(ES_Zscores_PRAs_5KM,file=paste("processed_datasets/",names(ES_Zscores_PRAs_5KM),"_5KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
+write.csv(ES_Zscores_Confirmed_5KM_df,file = "processed_datasets/ES_ZScores_Confirmed_5KM.csv")
+# 
+writeRaster(ES_Zscores_Confirmed_5KM,file=paste("processed_datasets/",names(ES_Zscores_Confirmed_5KM),"_5KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
+
+# 10- SQKM OUTPUT
+write.csv(ES_Zscores_PRAs_10KM_df,file = "processed_datasets/ES_Zscores_PRAs_10KM.csv")
+# 
+writeRaster(ES_Zscores_PRAs_10KM,file=paste("processed_datasets/",names(ES_Zscores_PRAs_1KM),"_10KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
+write.csv(ES_Zscores_Confirmed_10KM_df,file = "processed_datasets/ES_ZScores_Confirmed_10KM.csv")
+# 
+writeRaster(ES_Zscores_Confirmed_10KM,file=paste("processed_datasets/",names(ES_Zscores_Confirmed_10KM),"_5KM.tif",sep=""),bylayer=TRUE,overwrite=TRUE)
+
 save.image(file = "processed_datasets/ES_ZScores_PRAs_Spatial_Layers.RData")
 ```
 
