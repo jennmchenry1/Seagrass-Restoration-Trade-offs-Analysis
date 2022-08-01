@@ -1,16 +1,12 @@
-\contentsline {section}{Meeting Notes \& ``To Do Lists''}{1}{section*.2}%
-\contentsline {subsection}{Notes from 7/22 meeting}{1}{section*.3}%
-\contentsline {section}{Maps of ES outcomes associated with potential recovery areas (PRAs) for seagrasses}{2}{section*.4}%
-\contentsline {subsection}{ES Enhancement Hotspot Maps (Exploratory Purposes)}{2}{section*.5}%
-\contentsline {section}{Visualizing Tradeoffs plots of services}{4}{section*.6}%
-\contentsline {subsection}{Simple corrplot for ES outcomes from potentail restoration areas for seagrasses}{4}{section*.7}%
-\contentsline {subsection}{Expanded corrplot for ES outcomes from potential restoration areas for seagrasses}{4}{section*.8}%
-\contentsline {subsection}{Pairwise plots of services}{6}{section*.9}%
-\contentsline {subsubsection}{Biodiversity vs Nursery Habitat}{6}{section*.10}%
-\contentsline {subsubsection}{Biodiversity vs Carbon Storage}{7}{section*.11}%
-\contentsline {subsubsection}{Carbon Storage vs Recreation}{8}{section*.12}%
-\contentsline {subsubsection}{Nursery Habitat vs Coastal Protection}{9}{section*.13}%
-\contentsline {subsubsection}{Recreation vs Coastal Protection}{10}{section*.14}%
-\contentsline {subsubsection}{Carbon Storage and Coastal Protection}{11}{section*.15}%
-\contentsline {subsection}{Multi-dimensional plot of service bundles}{11}{section*.16}%
-\contentsline {section}{Prioritization of restoration sites}{14}{section*.17}%
+\contentsline {section}{Paper Resources}{1}{section*.2}%
+\contentsline {section}{Visualizing Tradeoffs plots of services}{2}{section*.3}%
+\contentsline {subsection}{Simple corrplot for ES outcomes from potentail restoration areas for seagrasses}{2}{section*.4}%
+\contentsline {subsubsection}{Potential Restoration Areas (1-Hectare Res.)}{2}{section*.5}%
+\contentsline {subsubsection}{Potential Restoration Areas (1-Square Kilometer Res.)}{3}{section*.6}%
+\contentsline {subsection}{Pairwise plots of services}{4}{section*.7}%
+\contentsline {subsubsection}{Restoration Areas vs Confirmed Beds (1-Hectare Scale)}{4}{section*.8}%
+\contentsline {subsubsection}{Scale Comparison for Restoration Areas (Scatterplots) - 1-ha vs 1-sqkm vs 5-sqkm vs 10-sqkm}{5}{section*.9}%
+\contentsline {subsubsection}{Scale Comparison for Restoration Areas (Convex Hulls) - 1-ha vs 1-sqkm vs 5-sqkm vs 10-sqkm}{7}{section*.10}%
+\contentsline {section}{Prioritization of restoration sites}{8}{section*.11}%
+\contentsline {section}{Potential Supplemental Figures}{9}{section*.12}%
+\contentsline {subsection}{Maps of ES outcomes associated with potential recovery areas (PRAs) for seagrasses}{9}{section*.13}%
