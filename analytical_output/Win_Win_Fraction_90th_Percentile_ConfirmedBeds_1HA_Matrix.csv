@@ -1,0 +1,6 @@
+,BioDiv,NursHab,BlueCar,RecUse,CoastPro
+BioDiv,1.00,0.02,0.03,0.01,0.03
+NursHab,0.02,1.00,0.00,0.02,0.02
+BlueCar,0.03,0.00,1.00,0.00,0.02
+RecUse,0.01,0.02,0.00,1.00,0.00
+CoastPro,0.03,0.02,0.02,0.00,1.00
