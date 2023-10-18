@@ -1,0 +1,1457 @@
+---
+title: "1. Seagrass Restoration Trade-offs Paper - Spatial Analysis & Plotting"
+author: "Jennifer McHenry"
+date: "08/01/2022"
+output: 
+  pdf_document:
+    extra_dependencies: float 
+    toc: yes
+    fig_width: 8
+    fig_height: 6
+    fig_caption: yes
+---
+
+
+```{r setup, include=FALSE,fig.height=6}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.pos = "H", out.extra = "")
+
+#Load Libraries
+library(tidyverse)
+library(terra)
+library(RColorBrewer)
+library(viridis)
+library(ggpubr)
+library(corrplot)
+library(corrplot)
+# remotes::install_version("Rttf2pt1", version = "1.3.8")
+# library(extrafont)
+library(colorspace)
+library(paletteer); library(colorBlindness)
+library("ggsci")
+library("ggplot2")
+library(ggExtra)
+
+# library(rgeos)
+library(veccompare)
+library(grDevices)
+
+#Setting Directory Paths
+wd=getwd()
+
+username=as.vector(strsplit(wd,"/"));names(username)<-c("username")
+
+Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disseratation/",sep="")
+```
+
+# Paper Resources
+
+Click [**here**](https://docs.google.com/document/d/1a-w1l9gmgQC8Fafp4zqLbFPMXytu6nq-nX5ImwAyuts/edit) to see the latest meeting notes in the Google Doc. 
+
+
+
+# Setup (i.e., loading data). 
+```{r}
+#Predicted Seagrass cover
+Seagrass_Cover <- rast("processed_datasets/Seagrass_Cover_1HA_EA.tif")
+Seagrass_Cover_1KM <-aggregate(Seagrass_Cover, fact=10, fun=mean)
+# Seagrass_Cover_1KM <- mask(Seagrass_Cover_1KM,Confirmed_1KM)
+# names(Seagrass_Cover_1KM) <- c("")
+
+# Confirmed Beds
+NursHab_Confirmed_1KM <- rast("processed_datasets/NursHab_EV_Zscores_Confirmed_1KM.tif")
+BlueCar_Confirmed_1KM <- rast("processed_datasets/BC_Storage_EV_Zscores_Confirmed_1KM.tif")
+RecUse_Confirmed_1KM <- rast("processed_datasets/Rec_EV_Zscores_Confirmed_1KM.tif")
+RecUse_Confirmed_1KM <- rast("processed_datasets/Rec_EV_Zscores_Confirmed_1KM.tif")
+CoastProt_Confirmed_1KM <- rast("processed_datasets/Exposure_EV_Zscores_Confirmed_1KM.tif")
+Biodiv_Confirmed_1KM <- rast("processed_datasets/BioDiv_EV_Zscores_Confirmed_1KM.tif")
+# Biodiv_Confirmed_1KM[Biodiv_Confirmed_1KM>1]<-1
+
+ESV_Confirmed_1km <- c(NursHab_Confirmed_1KM,BlueCar_Confirmed_1KM,RecUse_Confirmed_1KM,CoastProt_Confirmed_1KM,Biodiv_Confirmed_1KM)
+
+names(ESV_Confirmed_1km) <- c("NursHab","BlueCar","RecUse","CoastProt","Biodiv")
+
+ESV_Confirmed_1km_df <-as.data.frame(ESV_Confirmed_1km,xy=TRUE)
+ESV_Confirmed_1km_df$Area<-c("Confirmed Beds")
+ESV_Confirmed_1km_df$Scale<-c("1-sqkm")
+
+ESV_Confirmed_1km_df <- ESV_Confirmed_1km_df[complete.cases(ESV_Confirmed_1km_df),]
+
+Confirmed <-rast("processed_datasets/Confirmed_Beds.tif")
+Confirmed_1KM <-resample(Confirmed,ESV_Confirmed_1km)
+# names(Confirmed_1KM) <- c("")
+
+
+# Potential Recovery Area
+NursHab_PRAs_1KM <- rast("processed_datasets/NursHab_EV_Zscores_PRAs_1KM.tif")
+BlueCar_PRAs_1KM <- rast("processed_datasets/BC_Storage_EV_Zscores_PRAs_1KM.tif")
+RecUse_PRAs_1KM <- rast("processed_datasets/Rec_EV_Zscores_PRAs_1KM.tif")
+CoastProt_PRAs_1KM <- rast("processed_datasets/Exposure_EV_Zscores_PRAs_1KM.tif")
+Biodiv_PRAs_1KM <- rast("processed_datasets/BioDiv_EV_Zscores_PRAs_1KM.tif")
+
+ESV_PRAs_1km <- c(NursHab_PRAs_1KM,BlueCar_PRAs_1KM,RecUse_PRAs_1KM,CoastProt_PRAs_1KM,Biodiv_PRAs_1KM)
+
+names(ESV_PRAs_1km) <- c("NursHab","BlueCar","RecUse","CoastProt","Biodiv")
+
+ESV_PRAs_1km_df <-as.data.frame(ESV_PRAs_1km,xy=TRUE)
+ESV_PRAs_1km_df$Area<-c("Restoration Area")
+ESV_PRAs_1km_df$Scale<-c("1-sqkm")
+ESV_PRAs_1km_df <- ESV_PRAs_1km_df[complete.cases(ESV_PRAs_1km_df),]
+
+PRAs <-rast("processed_datasets/PRAs.tif")
+PRAs_1KM <-resample(PRAs,ESV_PRAs_1km)
+# names(Confirmed_1KM) <- c("")
+
+
+land <- rnaturalearth::ne_countries(scale = 50, returnclass = "sf")[1]
+land <- vect(land)
+newproj <- '+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs'
+land <- terra::project(x=land, y=newproj)
+
+
+# ES_Zscores_1HA_df<-rbind(ESV_Confirmed_1km_df,ESV_PRAs_1km_df)
+
+```
+
+\newpage
+
+
+## Simple corrplot for ES outcomes 
+```{r,include=FALSE}
+##Pearson Correlations 
+# Confirmed Beds (1-hectare)
+ESV_Confirmed_1km_df_FINAL<-ESV_Confirmed_1km_df
+
+names(ESV_Confirmed_1km_df_FINAL)<-c("Longitude","Latitude","Nursery Habitat","Blue Carbon","Recreation","Coastal Protection", "Biodiversity", "Seagrass-Area", "Scale")
+
+#main ecosystem services
+ES_cors_Confirmed_1KM<-cor(ESV_Confirmed_1km_df_FINAL[c(3:7)])
+write.csv(ES_cors_Confirmed_1KM,file="analytical_output/Cor_Coef_ConfirmedBeds_1SqKM.csv")
+ES_cors_Confirmed_1KM<-round(ES_cors_Confirmed_1KM,2)
+
+
+#saving the output
+tiff("publication_plots/Results_10_18_2023/Figure_CorrPlot_Confirmed_1SQKM.tif", units="in", width=5, height=5, res=300)
+
+corrplot(ES_cors_Confirmed_1KM, type = 'lower', order = 'original', tl.col = 'black',
+         cl.ratio = 0.2, tl.srt = 45, col= colorRampPalette(c("red","white","blue"))(8),addCoef.col = 'black',diag=FALSE)
+dev.off()
+
+
+# Confirmed Beds (5x5km)
+ESV_PRAs_1km_df_FINAL<-ESV_PRAs_1km_df
+
+names(ESV_PRAs_1km_df_FINAL)<-c("Longitude","Latitude","Nursery Habitat","Blue Carbon","Recreation","Coastal Protection","Biodiversity","Seagrass-Area","Scale")
+
+#main ecosystem services
+ES_cors_PRAs_1KM<-cor(ESV_PRAs_1km_df_FINAL[c(3:7)])
+write.csv(ES_cors_PRAs_1KM,file="analytical_output/Cor_Coef_RestorationAreas_1KM.csv")
+ES_cors_PRAs_1KM<-round(ES_cors_PRAs_1KM,2)
+
+
+#saving the output
+tiff("publication_plots/Results_10_18_2023/Figure_CorrPlot_PRAs_1SQKM.tif", units="in", width=5, height=5, res=300)
+
+corrplot(ES_cors_PRAs_1KM, type = 'lower', order = 'original', tl.col = 'black',
+         cl.ratio = 0.2, tl.srt = 45, col= colorRampPalette(c("red","white","blue"))(8),addCoef.col = 'black',diag=FALSE)
+dev.off()
+```
+
+### Confirmed Seagrass Beds (1-Hectare Res.)
+
+```{r fig.cap= "Pearsons correaltion between ecosystem service outcomes assocaited with confirmed seagrass beds in the Florida Gulf Coast (1-Hectare Res)"}
+knitr::include_graphics('publication_plots/Results_10_18_2023/Figure_CorrPlot_Confirmed_1SQKM.tif')
+```
+
+### Confirmed Seagrass Beds (5x5km Res.)
+
+```{r fig.cap= "Pearsons correaltion between ecosystem service outcomes assocaited with confirmed seagrass beds in the Florida Gulf Coast (5x5km Res)"}
+knitr::include_graphics("publication_plots/Results_10_18_2023/Figure_CorrPlot_Confirmed_1SQKM.tif")
+```
+
+\newpage
+
+## Simple trade-off severity metric (i.e., fraction of points in the "win-win" quadrant for 2 services) 
+
+```{r,include=FALSE}
+names(ESV_Confirmed_1km_df)
+
+
+ES_Zscores_1KM_75th_Confirmed_df<-ESV_Confirmed_1km_df%>%
+  filter(Area=="Confirmed Beds")%>%
+  mutate(BioDiv_percentile=pnorm(Biodiv),NurHab_percentile=pnorm(NursHab),BlueCar_percentile=pnorm(BlueCar),RecTour_percentile=pnorm(RecUse),CoastProt_percentile=pnorm(CoastProt))%>%
+  mutate(BioDiv_QT=ifelse(Biodiv>=0.75,1,0))%>%
+  mutate(NurHab_QT=ifelse(NursHab>=0.75,1,0))%>%
+  mutate(BlueCar_QT=ifelse(BlueCar>=0.75,1,0))%>%
+  mutate(RecTour_QT=ifelse(RecUse>=0.75,1,0))%>%
+  mutate(CoastProt_QT=ifelse(CoastProt>=0.75,1,0))%>%
+  dplyr::select(BioDiv_QT:CoastProt_QT)%>%
+  mutate(Bio_Nurs_WW=ifelse(BioDiv_QT==1 & NurHab_QT==1,1,0))%>%
+  mutate(Bio_Blu_WW=ifelse(BioDiv_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Bio_Rec_WW=ifelse(BioDiv_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Bio_Coast_WW=ifelse(BioDiv_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Nurs_Blu_WW=ifelse(NurHab_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Nurs_Rec_WW=ifelse(NurHab_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Nurs_Coast_WW=ifelse(NurHab_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Blue_Rec_WW=ifelse(BlueCar_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Blue_Coast_WW=ifelse(BlueCar_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Rec_Coast_WW=ifelse(RecTour_QT==1 & CoastProt_QT==1,1,0))
+
+
+ES_Zscores_1KM_90th_Confirmed_df<-ESV_Confirmed_1km_df%>%
+  filter(Area=="Confirmed Beds")%>%
+  mutate(BioDiv_percentile=pnorm(Biodiv),NurHab_percentile=pnorm(NursHab),BlueCar_percentile=pnorm(BlueCar),RecTour_percentile=pnorm(RecUse),CoastProt_percentile=pnorm(CoastProt))%>%
+  mutate(BioDiv_QT=ifelse(Biodiv>=0.9,1,0))%>%
+  mutate(NurHab_QT=ifelse(NursHab>=0.9,1,0))%>%
+  mutate(BlueCar_QT=ifelse(BlueCar>=0.9,1,0))%>%
+  mutate(RecTour_QT=ifelse(RecUse>=0.9,1,0))%>%
+  mutate(CoastProt_QT=ifelse(CoastProt>=0.9,1,0))%>%
+  dplyr::select(BioDiv_QT:CoastProt_QT)%>%
+  mutate(Bio_Nurs_WW=ifelse(BioDiv_QT==1 & NurHab_QT==1,1,0))%>%
+  mutate(Bio_Blu_WW=ifelse(BioDiv_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Bio_Rec_WW=ifelse(BioDiv_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Bio_Coast_WW=ifelse(BioDiv_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Nurs_Blu_WW=ifelse(NurHab_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Nurs_Rec_WW=ifelse(NurHab_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Nurs_Coast_WW=ifelse(NurHab_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Blue_Rec_WW=ifelse(BlueCar_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Blue_Coast_WW=ifelse(BlueCar_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Rec_Coast_WW=ifelse(RecTour_QT==1 & CoastProt_QT==1,1,0))
+
+
+
+
+Winwin_frequency_1KM_75th_Confirmed_summed <- ES_Zscores_1KM_75th_Confirmed_df%>%
+  dplyr::select(Bio_Nurs_WW:Rec_Coast_WW)%>%
+  summarize_all(.funs = sum)
+#
+Winwin_Fraction_1KM_75th_Confirmed<-Winwin_frequency_1KM_75th_Confirmed_summed/dim(ES_Zscores_1KM_75th_Confirmed_df)[[1]]
+
+write.csv(Winwin_Fraction_1KM_75th_Confirmed,file="analytical_output/Win_Win_Fraction_75th_Percentile_ConfirmedBeds_1SQKM.csv")
+
+Winwin_frequency_1KM_90th_Confirmed_summed <- ES_Zscores_1KM_90th_Confirmed_df%>%
+  dplyr::select(Bio_Nurs_WW:Rec_Coast_WW)%>%
+  summarize_all(.funs = sum)
+# 
+Winwin_Fraction_1KM_90th_Confirmed<-Winwin_frequency_1KM_90th_Confirmed_summed/dim(ES_Zscores_1KM_90th_Confirmed_df)[[1]]
+
+write.csv(Winwin_Fraction_1KM_90th_Confirmed,file="analytical_output/Win_Win_Fraction_90th_Percentile_ConfirmedBeds_1SQKM.csv")
+
+
+#load the fixed datasets back in
+# Winwin_Fraction_1HA_75th_Confirmed_Matrix<-read.csv("analytical_output/Win_Win_Fraction_75th_Percentile_ConfirmedBeds_1SQKM.csv")
+# 
+# 
+# Winwin_Fraction_1HA_90th_Confirmed_Matrix<-read.csv("analytical_output/Win_Win_Fraction_90th_Percentile_ConfirmedBeds_1SQKM.csv")
+# 
+# 
+
+
+```
+
+
+
+```{r,include=FALSE}
+names(ESV_PRAs_1km_df)
+
+
+ES_Zscores_1KM_75th_PRAs_df<-ESV_PRAs_1km_df%>%
+  filter(Area=="Restoration Area")%>%
+  mutate(BioDiv_percentile=pnorm(Biodiv),NurHab_percentile=pnorm(NursHab),BlueCar_percentile=pnorm(BlueCar),RecTour_percentile=pnorm(RecUse),CoastProt_percentile=pnorm(CoastProt))%>%
+  mutate(BioDiv_QT=ifelse(Biodiv>=0.75,1,0))%>%
+  mutate(NurHab_QT=ifelse(NursHab>=0.75,1,0))%>%
+  mutate(BlueCar_QT=ifelse(BlueCar>=0.75,1,0))%>%
+  mutate(RecTour_QT=ifelse(RecUse>=0.75,1,0))%>%
+  mutate(CoastProt_QT=ifelse(CoastProt>=0.75,1,0))%>%
+  dplyr::select(BioDiv_QT:CoastProt_QT)%>%
+  mutate(Bio_Nurs_WW=ifelse(BioDiv_QT==1 & NurHab_QT==1,1,0))%>%
+  mutate(Bio_Blu_WW=ifelse(BioDiv_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Bio_Rec_WW=ifelse(BioDiv_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Bio_Coast_WW=ifelse(BioDiv_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Nurs_Blu_WW=ifelse(NurHab_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Nurs_Rec_WW=ifelse(NurHab_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Nurs_Coast_WW=ifelse(NurHab_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Blue_Rec_WW=ifelse(BlueCar_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Blue_Coast_WW=ifelse(BlueCar_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Rec_Coast_WW=ifelse(RecTour_QT==1 & CoastProt_QT==1,1,0))
+
+
+ES_Zscores_1KM_90th_PRAs_df<-ESV_PRAs_1km_df%>%
+  filter(Area=="Restoration Area")%>%
+  mutate(BioDiv_percentile=pnorm(Biodiv),NurHab_percentile=pnorm(NursHab),BlueCar_percentile=pnorm(BlueCar),RecTour_percentile=pnorm(RecUse),CoastProt_percentile=pnorm(CoastProt))%>%
+  mutate(BioDiv_QT=ifelse(Biodiv>=0.9,1,0))%>%
+  mutate(NurHab_QT=ifelse(NursHab>=0.9,1,0))%>%
+  mutate(BlueCar_QT=ifelse(BlueCar>=0.9,1,0))%>%
+  mutate(RecTour_QT=ifelse(RecUse>=0.9,1,0))%>%
+  mutate(CoastProt_QT=ifelse(CoastProt>=0.9,1,0))%>%
+  dplyr::select(BioDiv_QT:CoastProt_QT)%>%
+  mutate(Bio_Nurs_WW=ifelse(BioDiv_QT==1 & NurHab_QT==1,1,0))%>%
+  mutate(Bio_Blu_WW=ifelse(BioDiv_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Bio_Rec_WW=ifelse(BioDiv_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Bio_Coast_WW=ifelse(BioDiv_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Nurs_Blu_WW=ifelse(NurHab_QT==1 & BlueCar_QT==1,1,0))%>%
+  mutate(Nurs_Rec_WW=ifelse(NurHab_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Nurs_Coast_WW=ifelse(NurHab_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Blue_Rec_WW=ifelse(BlueCar_QT==1 & RecTour_QT==1,1,0))%>%
+  mutate(Blue_Coast_WW=ifelse(BlueCar_QT==1 & CoastProt_QT==1,1,0))%>%
+  mutate(Rec_Coast_WW=ifelse(RecTour_QT==1 & CoastProt_QT==1,1,0))
+
+
+
+Winwin_frequency_1KM_75th_PRAs_summed <- ES_Zscores_1KM_75th_PRAs_df%>%
+  dplyr::select(Bio_Nurs_WW:Rec_Coast_WW)%>%
+  summarize_all(.funs = sum)
+#
+Winwin_Fraction_1KM_75th_PRAs<-Winwin_frequency_1KM_75th_PRAs_summed/dim(ES_Zscores_1KM_75th_PRAs_df)[[1]]
+
+write.csv(Winwin_Fraction_1KM_75th_PRAs,file="analytical_output/Win_Win_Fraction_75th_Percentile_PRAs_1SQKM.csv")
+
+Winwin_frequency_1KM_90th_PRAs_summed <- ES_Zscores_1KM_90th_PRAs_df%>%
+  dplyr::select(Bio_Nurs_WW:Rec_Coast_WW)%>%
+  summarize_all(.funs = sum)
+# 
+Winwin_Fraction_1KM_90th_PRAs<-Winwin_frequency_1KM_90th_PRAs_summed/dim(ES_Zscores_1KM_90th_PRAs_df)[[1]]
+
+write.csv(Winwin_Fraction_1KM_90th_PRAs,file="analytical_output/Win_Win_Fraction_90th_Percentile_PRAs_1SQKM.csv")
+
+
+#load the fixed datasets back in
+# Winwin_Fraction_1HA_75th_Confirmed_Matrix<-read.csv("analytical_output/Win_Win_Fraction_75th_Percentile_ConfirmedBeds_1SQKM.csv")
+# 
+# 
+# Winwin_Fraction_1HA_90th_Confirmed_Matrix<-read.csv("analytical_output/Win_Win_Fraction_90th_Percentile_ConfirmedBeds_1SQKM.csv")
+# 
+# 
+
+
+```
+
+
+
+\newpage
+
+
+## Pairwise plots of services
+
+######## HAVENT UPDATED FROM HERE ON OUT.
+
+# Confirmed Seagrass Beds (1-hectare)
+```{r,include=FALSE}
+#Testing out making  a map of confirmed beds (1-hectare pixels)
+#subsampling
+# ES_Zscores_1HA_df_X=sample_n(ES_Zscores_1HA_df, 3000)
+ES_Zscores_1HA_df_X=ES_Zscores_1HA_df
+
+
+ALPHA=0.5
+QT=1.282
+### Biodiversity vs Nursery Habitat
+p2_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=NurHab,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  + 
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") +
+  xlab("Nursery Habitat")+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas()+ theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p2_density <- ggMarginal(p2_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Carbon Storage
+p3_density <-ES_Zscores_1HA_df_X%>%
+    filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Blue Carbon")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p3_density <- ggMarginal(p3_density, type="violin",color="red",margins=c("x"))
+
+
+### Biodiversity vs Recreation
+p4_density <-ES_Zscores_1HA_df_X%>%
+    filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Recreation")+  
+  #   geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p4_density <- ggMarginal(p4_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Coastal Protection
+p5_density <-ES_Zscores_1HA_df_X%>%
+    filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p5_density <- ggMarginal(p5_density, type="violin",color="red")
+
+### Nursery Habitat vs Blue Carbon
+p6_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=NurHab, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Blue Carbon")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+
+### Nursery Habitat vs Recreation
+p7_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=NurHab, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Recreation")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Nursery Habitat vs Coastal Protection
+p8_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=NurHab, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Coastal Protection")+
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p8_density <- ggMarginal(p8_density, type="violin",color="red",margins=c("y"))
+
+### Blue Carbon vs Recreation
+p9_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BlueCar, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Recreation")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Blue Carbon vs Coastal Protection
+p10_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BlueCar, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p10_density <- ggMarginal(p10_density, type="violin",color="red",margins=c("y"))
+
+### Recreation  vs Coastal Protection
+p11_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=RecTour, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Recreation") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p11_density <- ggMarginal(p11_density, type="violin",color="red",margins=c("y"))
+
+#blank
+blank=ES_Zscores_1HA_df_X%>%
+    ggplot(aes(y=NurHab, x=Expos))+xlab("")+ylab("")+theme(axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),legend.position="none",
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())
+
+
+#saving the output
+jpeg("trial_plots/Figure_2_ConfirmedBeds_1HA.jpg", units="in", width=10, height=8, res=300)
+# ggarrange(p2_density,p3_density,p4_density,
+#           p5_density, p6_density,p7_density,
+#           p8_density,p9_density, p10_density,nrow = 3, ncol=3)
+
+ggarrange(p2_density,p3_density,p4_density,p5_density,
+          blank, p6_density,p7_density,p8_density,
+          blank, blank, p9_density, p10_density,
+          blank, blank, blank, p11_density,nrow = 4, ncol=4)
+dev.off()
+
+# ggarrange(blank,p6,p7,p8,nrow = 1, ncol=4,widths = c(2,2,2,2),heights = c(1,1,1,1))
+
+
+```
+
+# Confirmed Seagrass Beds (5x5 kilometer res)
+```{r,include=FALSE}
+#Testing out making  a map of confirmed beds (1-hectare pixels)
+#subsampling
+# ES_Zscores_5KM_df_X=sample_n(ES_Zscores_5KM_df, 3000)
+ES_Zscores_5KM_df_X=ES_Zscores_5KM_df
+
+
+ALPHA=0.5
+QT=1.282
+### Biodiversity vs Nursery Habitat
+p2_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=NurHab,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  + 
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") +
+  xlab("Nursery Habitat")+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas()+ theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p2_density <- ggMarginal(p2_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Carbon Storage
+p3_density <-ES_Zscores_5KM_df_X%>%
+    filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Blue Carbon")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p3_density <- ggMarginal(p3_density, type="violin",color="red",margins=c("x"))
+
+
+### Biodiversity vs Recreation
+p4_density <-ES_Zscores_5KM_df_X%>%
+    filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Recreation")+  
+  #   geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p4_density <- ggMarginal(p4_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Coastal Protection
+p5_density <-ES_Zscores_5KM_df_X%>%
+    filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BioDiv, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p5_density <- ggMarginal(p5_density, type="violin",color="red")
+
+### Nursery Habitat vs Blue Carbon
+p6_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=NurHab, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Blue Carbon")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+
+### Nursery Habitat vs Recreation
+p7_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=NurHab, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Recreation")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Nursery Habitat vs Coastal Protection
+p8_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=NurHab, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Coastal Protection")+
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p8_density <- ggMarginal(p8_density, type="violin",color="red",margins=c("y"))
+
+### Blue Carbon vs Recreation
+p9_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BlueCar, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Recreation")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Blue Carbon vs Coastal Protection
+p10_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=BlueCar, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p10_density <- ggMarginal(p10_density, type="violin",color="red",margins=c("y"))
+
+### Recreation  vs Coastal Protection
+p11_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Confirmed")%>%
+  ggplot(aes(y=RecTour, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Recreation") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p11_density <- ggMarginal(p11_density, type="violin",color="red",margins=c("y"))
+
+#blank
+blank=ES_Zscores_1HA_df_X%>%
+    ggplot(aes(y=NurHab, x=Expos))+xlab("")+ylab("")+theme(axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),legend.position="none",
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())
+
+
+#saving the output
+jpeg("trial_plots/Figure_2_ConfirmedBeds_5KM.jpg", units="in", width=10, height=8, res=300)
+# ggarrange(p2_density,p3_density,p4_density,
+#           p5_density, p6_density,p7_density,
+#           p8_density,p9_density, p10_density,nrow = 3, ncol=3)
+
+ggarrange(p2_density,p3_density,p4_density,p5_density,
+          blank, p6_density,p7_density,p8_density,
+          blank, blank, p9_density, p10_density,
+          blank, blank, blank, p11_density,nrow = 4, ncol=4)
+dev.off()
+
+# ggarrange(blank,p6,p7,p8,nrow = 1, ncol=4,widths = c(2,2,2,2),heights = c(1,1,1,1))
+
+
+```
+
+# Potential Restoration Areas for Seagrass Beds(1-hectare)
+```{r,include=FALSE}
+#Testing out making  a map of confirmed beds (1-hectare pixels)
+#subsampling
+# ES_Zscores_1HA_df_X=sample_n(ES_Zscores_1HA_df, 3000)
+ES_Zscores_1HA_df_X=ES_Zscores_1HA_df
+
+
+ALPHA=0.5
+QT=1.282
+### Biodiversity vs Nursery Habitat
+p2_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=NurHab,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  + 
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") +
+  xlab("Nursery Habitat")+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas()+ theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p2_density <- ggMarginal(p2_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Carbon Storage
+p3_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Blue Carbon")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p3_density <- ggMarginal(p3_density, type="violin",color="red",margins=c("x"))
+
+
+### Biodiversity vs Recreation
+p4_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Recreation")+  
+  #   geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p4_density <- ggMarginal(p4_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Coastal Protection
+p5_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p5_density <- ggMarginal(p5_density, type="violin",color="red")
+
+### Nursery Habitat vs Blue Carbon
+p6_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=NurHab, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Blue Carbon")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+
+### Nursery Habitat vs Recreation
+p7_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=NurHab, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Recreation")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Nursery Habitat vs Coastal Protection
+p8_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=NurHab, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Coastal Protection")+
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p8_density <- ggMarginal(p8_density, type="violin",color="red",margins=c("y"))
+
+### Blue Carbon vs Recreation
+p9_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BlueCar, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Recreation")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Blue Carbon vs Coastal Protection
+p10_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BlueCar, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p10_density <- ggMarginal(p10_density, type="violin",color="red",margins=c("y"))
+
+### Recreation  vs Coastal Protection
+p11_density <-ES_Zscores_1HA_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=RecTour, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Recreation") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p11_density <- ggMarginal(p11_density, type="violin",color="red",margins=c("y"))
+
+#blank
+blank=ES_Zscores_1HA_df_X%>%
+    ggplot(aes(y=NurHab, x=Expos))+xlab("")+ylab("")+theme(axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),legend.position="none",
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())
+
+
+#saving the output
+jpeg("trial_plots/Figure_2_PRAs_1HA.jpg", units="in", width=10, height=8, res=300)
+# ggarrange(p2_density,p3_density,p4_density,
+#           p5_density, p6_density,p7_density,
+#           p8_density,p9_density, p10_density,nrow = 3, ncol=3)
+
+ggarrange(p2_density,p3_density,p4_density,p5_density,
+          blank, p6_density,p7_density,p8_density,
+          blank, blank, p9_density, p10_density,
+          blank, blank, blank, p11_density,nrow = 4, ncol=4)
+dev.off()
+
+# ggarrange(blank,p6,p7,p8,nrow = 1, ncol=4,widths = c(2,2,2,2),heights = c(1,1,1,1))
+
+
+```
+
+# Potential Restoration Areas for Seagrass Beds (5x5 kilometer res)
+```{r,include=FALSE}
+#Testing out making  a map of confirmed beds (1-hectare pixels)
+#subsampling
+# ES_Zscores_5KM_df_X=sample_n(ES_Zscores_5KM_df, 3000)
+ES_Zscores_5KM_df_X=ES_Zscores_5KM_df
+
+
+ALPHA=0.5
+QT=1.282
+### Biodiversity vs Nursery Habitat
+p2_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=NurHab,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  + 
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") +
+  xlab("Nursery Habitat")+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas()+ theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p2_density <- ggMarginal(p2_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Carbon Storage
+p3_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Blue Carbon")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p3_density <- ggMarginal(p3_density, type="violin",color="red",margins=c("x"))
+
+
+### Biodiversity vs Recreation
+p4_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Recreation")+  
+  #   geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p4_density <- ggMarginal(p4_density, type="violin",color="red",margins=c("x"))
+
+### Biodiversity vs Coastal Protection
+p5_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BioDiv, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BioDiv_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p5_density <- ggMarginal(p5_density, type="violin",color="red")
+
+### Nursery Habitat vs Blue Carbon
+p6_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=NurHab, x=BlueCar,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Blue Carbon")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+
+### Nursery Habitat vs Recreation
+p7_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=NurHab, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Recreation")+ 
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Nursery Habitat vs Coastal Protection
+p8_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=NurHab, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Coastal Protection")+
+  # geom_hline(yintercept = NurHab_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p8_density <- ggMarginal(p8_density, type="violin",color="red",margins=c("y"))
+
+### Blue Carbon vs Recreation
+p9_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BlueCar, x=RecTour,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Recreation")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+
+### Blue Carbon vs Coastal Protection
+p10_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=BlueCar, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = BlueCar_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p10_density <- ggMarginal(p10_density, type="violin",color="red",margins=c("y"))
+
+### Recreation  vs Coastal Protection
+p11_density <-ES_Zscores_5KM_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  ggplot(aes(y=RecTour, x=Expos,colour=Area)) +
+  annotate("rect", xmin = Inf, xmax = 0, ymin = Inf, ymax = 0, fill= "grey",alpha=0.5)  + 
+  annotate("rect", xmin = Inf, xmax = QT, ymin = Inf, ymax = QT, fill= "grey1",alpha=0.5)  +   # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point()+
+  geom_smooth(method="lm",color="red")+
+  ggtitle("") +
+  ylab("Recreation") + xlab("Coastal Protection")+  
+  # geom_hline(yintercept = RecTour_QT[[QT]], colour="red", size=1)+
+  # geom_vline(xintercept = Expos_QT[[QT]], colour="red", size=1)+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") +
+  xlim(-2,8)+ylim(-2,4)#+facet_wrap(~Area)
+
+p11_density <- ggMarginal(p11_density, type="violin",color="red",margins=c("y"))
+
+#blank
+blank=ES_Zscores_1HA_df_X%>%
+    ggplot(aes(y=NurHab, x=Expos))+xlab("")+ylab("")+theme(axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),legend.position="none",
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())
+
+
+#saving the output
+jpeg("trial_plots/Figure_2_PRAs_5KM.jpg", units="in", width=10, height=8, res=300)
+# ggarrange(p2_density,p3_density,p4_density,
+#           p5_density, p6_density,p7_density,
+#           p8_density,p9_density, p10_density,nrow = 3, ncol=3)
+
+ggarrange(p2_density,p3_density,p4_density,p5_density,
+          blank, p6_density,p7_density,p8_density,
+          blank, blank, p9_density, p10_density,
+          blank, blank, blank, p11_density,nrow = 4, ncol=4)
+dev.off()
+
+# ggarrange(blank,p6,p7,p8,nrow = 1, ncol=4,widths = c(2,2,2,2),heights = c(1,1,1,1))
+
+
+```
+
+
+\newpage
+
+### Scale Comparison for Restoration Areas (Scatterplots) - 1-ha vs 1-sqkm vs 5-sqkm vs 10-sqkm
+```{r, include=FALSE}
+# ES_Zscores_1HA_df_X=sample_n(ES_Zscores_1HA_df, 500)
+ES_Zscores_1HA_df_X=ES_Zscores_1HA_df
+
+# ES_Zscores_1KM_df_X=sample_n(ES_Zscores_1KM_df, 500)
+ES_Zscores_1KM_df_X=ES_Zscores_1KM_df
+
+# ES_Zscores_5KM_df_X=sample_n(ES_Zscores_5KM_df, 500)
+ES_Zscores_5KM_df_X=ES_Zscores_5KM_df
+
+ES_Zscores_10KM_df_X=sample_n(ES_Zscores_10KM_df, 500)
+ES_Zscores_10KM_df_X=ES_Zscores_10KM_df_X
+
+
+ES_Zscores_Scale_Comparion_df_X=rbind(ES_Zscores_1HA_df_X,ES_Zscores_1KM_df_X,ES_Zscores_5KM_df_X,ES_Zscores_10KM_df_X)
+
+ES_Zscores_Scale_Comparion_df_X=ES_Zscores_Scale_Comparion_df_X%>%
+  filter(Area=="Unconfirmed")%>%
+  mutate(Scale=factor(Scale,levels=c("1-Hectare","1-SQKM","5-SQKM","10-SQKM")))
+
+ALPHA=0.5
+### Biodiversity vs Nursery Habitat
+p2_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=BioDiv, x=NurHab,color=Scale)) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Biodiversity") +
+  xlab("Nursery Habitat")+
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas()+ theme_minimal()+theme(legend.position="none") #+facet_wrap(~Area)
+
+
+### Biodiversity vs Carbon Storage
+p3_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=BioDiv, x=BlueCar,color=Scale)) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Blue Carbon")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") #+facet_wrap(~Area)
+
+
+### Biodiversity vs Recreation
+p4_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=BioDiv, x=RecTour,color=Scale)) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Recreation")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none")  #+facet_wrap(~Area)
+
+
+### Biodiversity vs Coastal Protection
+p5_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=BioDiv, x=Expos,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Biodiversity") + xlab("Coastal Protection")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") #+facet_wrap(~Area)
+
+
+
+### Nursery Habitat vs Blue Carbon
+p6_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=NurHab, x=BlueCar,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Blue Carbon")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none")  #+facet_wrap(~Area)
+
+
+
+### Nursery Habitat vs Recreation
+p7_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=NurHab, x=RecTour,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Recreation")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none")  #+facet_wrap(~Area)
+
+
+### Nursery Habitat vs Coastal Protection
+p8_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=NurHab, x=Expos,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Nursery Habitat") + xlab("Coastal Protection")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal()+theme(legend.position="none")  #+facet_wrap(~Area)
+
+
+### Blue Carbon vs Recreation
+p9_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=BlueCar, x=RecTour,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Recreation")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() +theme(legend.position="none") #+facet_wrap(~Area) 
+
+
+### Blue Carbon vs Coastal Protection
+p10_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=BlueCar, x=Expos,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Blue Carbon") + xlab("Coastal Protection")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") #facet_wrap(~Area)  
+
+### Recreation vs Coastal Protection
+p11_density <-ES_Zscores_Scale_Comparion_df_X%>%
+  ggplot(aes(y=RecTour, x=Expos,color=Scale)) +
+  # stat_density2d(geom="tile", aes(fill = ..density..), contour = FALSE) +
+  geom_point(aes(colour = Scale),alpha=ALPHA)+
+  geom_smooth(method="lm",color="black")+facet_wrap(~Scale,nrow = 1)+
+  ggtitle("") +
+  ylab("Recreation") + xlab("Coastal Protection")+  
+  geom_hline(yintercept = 0, colour="grey", linetype="dashed",size=1)+
+  geom_vline(xintercept = 0, colour="grey", linetype="dashed",size=1)+
+  scale_color_aaas() + theme_minimal() + theme(legend.position="none") #fa
+
+#blank
+blank=ES_Zscores_1KM_df_X%>%
+    ggplot(aes(y=NurHab, x=Expos))+xlab("")+ylab("")+theme(axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),legend.position="none",
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())
+
+
+#saving the output
+jpeg("plots/Figure_3a.jpg", units="in", width=6, height=6, res=300)
+ggarrange(p2_density,p3_density,p4_density,
+
+          nrow = 3, ncol=1,common.legend = TRUE)
+dev.off()
+
+jpeg("plots/Figure_3b.jpg", units="in", width=6, height=6, res=300)
+ggarrange(p5_density, p6_density,p7_density,
+          nrow = 3, ncol=1,common.legend = TRUE)
+dev.off()
+
+jpeg("plots/Figure_3c.jpg", units="in", width=6, height=6, res=300)
+ggarrange(p8_density,p9_density, p10_density,
+          nrow = 3, ncol=1,common.legend = TRUE)
+dev.off()
+
+jpeg("plots/Figure_3d.jpg", units="in", width=6, height=2, res=300)
+ggarrange(p11_density,
+          nrow = 3, ncol=1,common.legend = TRUE)
+dev.off()
+
+```
+
+
+Questions for the group about these plots:
+
+* How can we make this a little more readable??
+```{r fig.cap= "Scale comparison for restoration sites.", out.width="90%"}
+knitr::include_graphics('plots/Figure_3a.jpg')
+knitr::include_graphics('plots/Figure_3b.jpg')
+knitr::include_graphics('plots/Figure_3c.jpg')
+knitr::include_graphics('plots/Figure_3d.jpg')
+```
+
+
+# Prioritization of restoration sites
+
+Tutorial for PriortizR -> https://prioritizr.net/articles/gurobi_installation_guide.html
+
+```{r fig.cap= ""}
+
+```
+
+# Potential Supplemental Figures
+## Maps of ES outcomes associated with potential recovery areas (PRAs) for seagrasses
+```{r , out.width="98%",fig.cap="Spatial variation in expected ecosystem service enhancement values of potentail restoration areas for seagrasses in the Florida Gulf Coast. Ecosystem service outcomes are quantified in terms of the standardized enhancement effect of seagrasses on the predicted biodiversity, nursery habitat, blue carbon storage, recreation, and coastal protection services relative to levels predicted if the location were unvegetated. Standardized ecosystem service values show how pixels all relative to mean ecosystem service supply for the region in units of standard deviation."}
+knitr::include_graphics('plots/Figure_1a.jpg')
+```
+
+```{r,fig.cap="continued...",fig.width=4,fig.height=7}
+knitr::include_graphics('plots/Figure_1b.jpg')
+```
+
