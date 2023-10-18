@@ -1,0 +1,223 @@
+---
+title: "0. eagrass Restoration STradeoffs Paper - Post Processing Spatial Datasets"
+author: "Jennifer McHenry"
+date: "7/21/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.pos = "H", out.extra = "")
+
+#Load Libraries
+
+library(tidyverse)
+library(RColorBrewer)
+library(mgcv)
+library(tools)
+library(viridis)
+library(ggpubr)
+# library(ggsn)
+library(remotes)
+# library(raster)#depracated 
+library(terra)
+library(sp)
+library(rgdal)
+# remotes::install_version("Rttf2pt1", version = "1.3.8")
+library(extrafont)
+library(ggcorrplot)
+# extrafont::font_import() 
+loadfonts("win")
+library(ggplot2)
+library(corrplot)
+library(colorspace)
+library(rgeos)
+
+#Load Functions 
+pal_teal_blue_purple <- rainbow(12)
+
+odds_to_prob=function(x){
+        prob<-exp(x)/(1+exp(x))
+        return(prob)
+}
+
+#Setting Directory Paths
+wd=getwd()
+
+username=as.vector(strsplit(wd,"/"));names(username)<-c("username")
+
+Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disseratation/",sep="")
+
+```
+
+#LOADING DATASETS FOR THE ANALYSIS 
+```{r}
+
+#SEAGRASS LAYERS######################################################################################
+# Study area
+study_area<-rast("input_data/study_area.tif")
+
+#Total Predicted_Seagrass
+Seagrass_Cover=rast("input_data/Seagrass_Cover_MeanAnnual_Current_Corrected_CorExp.tif")
+names(Seagrass_Cover)<-c("Seagrass_Cover")
+
+world_crs <- '+proj=longlat +datum=WGS84 +no_defs '
+
+newproj <- '+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs'
+
+Seagrass_Cover=mask(Seagrass_Cover,mask=study_area)
+Seagrass_Cover <- terra::project(x=Seagrass_Cover, y=newproj)
+Seagrass_Cover <- terra::project(x=Seagrass_Cover, res=100, y=newproj)
+
+
+Total_Predicted_Seagrass_1HA=Seagrass_Cover
+Total_Predicted_Seagrass_1HA[Total_Predicted_Seagrass_1HA<5]<-NA
+Total_Predicted_Seagrass_1HA[Total_Predicted_Seagrass_1HA>=5]<-1
+
+# Total_Predicted_Seagrass_1HA[is.na(Total_Predicted_Seagrass_1HA)!=TRUE]<-1
+
+Total_Predicted_Seagrass_1KM <-aggregate(Total_Predicted_Seagrass_1HA, fact=10, fun=mean)
+
+Total_Predicted_Seagrass_5KM <-aggregate(Total_Predicted_Seagrass_1KM, fact=5, fun=mean)
+
+Total_Predicted_Seagrass_10KM <-aggregate(Total_Predicted_Seagrass_1KM, fact=10, fun=mean)
+
+
+#finalizing the raster version
+# Total_Predicted_Seagrass_1HA_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_1HA,crs=world_crs)
+# 
+# Total_Predicted_Seagrass_1KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_1KM,crs=world_crs)
+# 
+# Total_Predicted_Seagrass_5KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_5KM,crs=world_crs)
+# 
+# Total_Predicted_Seagrass_10KM_WGS <- raster::projectRaster(from=Total_Predicted_Seagrass_10KM,crs=world_crs)
+
+
+#Confirmed Seagrass Areas
+Confirmed=rast("input_data/seagrass_area_masks/confirmed_seagrass_beds.tif")
+Confirmed=mask(Confirmed,mask = study_area)
+
+#Potential recovery areas
+PRAs=rast("input_data/seagrass_area_masks/potential_recovery_area.tif")
+PRAs=mask(PRAs,mask = study_area)
+
+```
+
+# LOADING ECOSYSTEM SERVICE LAYERS - Confirmed Vs PRAs
+```{r}
+# Confirmed
+#Loading ES Outputs (Standarized)
+BioDiv_EV_Confirmed=rast("input_data/ES-Model-Outputs/ConfirmedBeds/BioDiv_EV_Raw_Confirmed.tif")
+NurHab_EV_Confirmed=rast("input_data/ES-Model-Outputs/ConfirmedBeds/NursHab_EV_Raw_Confirmed.tif")
+BlueCar_EV_Confirmed=rast("input_data/ES-Model-Outputs/ConfirmedBeds/BC_Storage_EV_Raw_Confirmed.tif")
+RecTour_EV_Confirmed=rast("input_data/ES-Model-Outputs/ConfirmedBeds/Rec_EV_Raw_Confirmed.tif")
+Expos_EV_Confirmed=rast("input_data/ES-Model-Outputs/ConfirmedBeds/Exposure_EV_Raw_Confirmed.tif")
+
+ES_Raw_Confirmed=c(BioDiv_EV_Confirmed,NurHab_EV_Confirmed,BlueCar_EV_Confirmed,RecTour_EV_Confirmed,Expos_EV_Confirmed)
+names(ES_Raw_Confirmed) <- c("BioDiv_EV_Raw_Confirmed","NursHab_EV_Raw_Confirmed", "BlueCarbon_EV_Raw_Confirmed","Rec_EV_Raw_Confirmed","Exposure_EV_Raw_Confirmed" )
+
+ES_Raw_Confirmed=mask(ES_Raw_Confirmed,mask=Confirmed)
+ES_Raw_Confirmed <- terra::project(x=ES_Raw_Confirmed, y=newproj)
+
+# Potential Recovery Areas
+#Loading ES Outputs (Standarized)
+BioDiv_EV_PRAs=rast("input_data/ES-Model-Outputs/PRAs/BioDiv_EV_Raw_PRAs.tif")
+NurHab_EV_PRAs=rast("input_data/ES-Model-Outputs/PRAs/NursHab_EV_Raw_PRAs.tif")
+BlueCar_EV_PRAs=rast("input_data/ES-Model-Outputs/PRAs/BC_Storage_EV_Raw_PRAs.tif")
+RecTour_EV_PRAs=rast("input_data/ES-Model-Outputs/PRAs/Rec_EV_Raw_PRAs.tif")
+Expos_EV_PRAs=rast("input_data/ES-Model-Outputs/PRAs/Exposure_EV_Raw_PRAs.tif")
+
+ES_Raw_PRAs=c(BioDiv_EV_PRAs,NurHab_EV_PRAs,BlueCar_EV_PRAs,RecTour_EV_PRAs,Expos_EV_PRAs)
+names(ES_Raw_PRAs) <- c("BioDiv_EV_Raw_PRAs","NursHab_EV_Raw_PRAs", "BlueCarbon_EV_Raw_PRAs","Rec_EV_Raw_PRAs","Exposure_EV_Raw_PRAs")
+ES_Raw_PRAs=mask(ES_Raw_PRAs,mask=PRAs)
+
+ES_Raw_PRAs <- terra::project(x=ES_Raw_PRAs, y=newproj)
+```
+
+# Parsing out two differnt sizes. (Z Scores)
+```{r}
+# 1-hectare analysis stack
+ES_Confirmed_1HA<-resample(x= ES_Raw_Confirmed, y=Total_Predicted_Seagrass_1HA)
+
+ES_Confirmed_1HA_df=as.points(ES_Confirmed_1HA)
+names(ES_Confirmed_1HA_df)<-c("BioDiv","NurHab","BlueCar","RecTour","Expos")
+summary(ES_Confirmed_1HA_df)
+
+ES_PRAs_1HA<-resample(x= ES_Raw_PRAs, y=Total_Predicted_Seagrass_1HA)
+
+ES_PRAs_1HA_df=as.points(ES_PRAs_1HA)
+names(ES_PRAs_1HA_df)<-c("BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+summary(ES_PRAs_1HA_df)
+
+
+# 1-kilometer analysis stack
+ES_Confirmed_1KM<-resample(x=ES_Raw_Confirmed, y=Total_Predicted_Seagrass_1KM)
+
+ES_Confirmed_1KM_df=as.points(ES_Confirmed_1KM)
+names(ES_Confirmed_1KM_df)<-c("BioDiv","NurHab","BlueCar","RecTour","Expos")
+summary(ES_Confirmed_1KM_df)
+
+ES_PRAs_1KM<-resample(x= ES_Raw_PRAs, y=Total_Predicted_Seagrass_1KM)
+
+ES_PRAs_1KM_df=as.points(ES_PRAs_1KM)
+names(ES_PRAs_1KM_df)<-c("BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+summary(ES_PRAs_1KM_df)
+
+# 5-kilometer analysis stack
+ES_Confirmed_5KM<-resample(x= ES_Raw_Confirmed, y=Total_Predicted_Seagrass_5KM)
+
+ES_Confirmed_5KM_5KM_df=as.points(ES_Confirmed_5KM)
+names(ES_Confirmed_5KM_5KM_df)<-c("BioDiv","NurHab","BlueCar","RecTour","Expos")
+summary(ES_Confirmed_5KM_5KM_df)
+
+ES_PRAs_5KM<-resample(x= ES_Raw_PRAs, y=Total_Predicted_Seagrass_5KM)
+
+ES_PRAs_5KM_df=as.points(ES_PRAs_5KM)
+names(ES_PRAs_5KM_df)<-c("BioDiv_PRAs","NurHab_PRAs","BlueCar_PRAs","RecTour_PRAs","Expos_PRAs")
+summary(ES_PRAs_5KM_df)
+
+```
+
+
+```{r}
+# Converting to equal area projections
+Confirmed <- terra::project(x=Confirmed, y=newproj)
+Confirmed <- terra::project(x=Confirmed, res=100,y=newproj)
+PRAs <- terra::project(x=PRAs, y=newproj)
+PRAs <- terra::project(x=PRAs, res=100,y=newproj)
+```
+
+
+# Saving output
+```{r}
+rm(list= ls()[!(ls() %in% c("Seagrass_Cover","Total_Predicted_Seagrass","PRAs","Confirmed","Total_Predicted_Seagrass_1HA","Total_Predicted_Seagrass_1KM","Total_Predicted_Seagrass_5KM","Total_Predicted_Seagrass_10KM","ES_PRAs_1HA","ES_PRAs_1HA_df","ES_Confirmed_1HA","ES_Confirmed_1HA_df","ES_PRAs_1KM","ES_PRAs_1KM_df","ES_Confirmed_1KM","ES_Confirmed_1KM_df", "ES_Confirmed_5KM", "ES_Confirmed_5KM_df","ES_PRAs_5KM","ES_PRAs_5KM_df"))])
+
+
+
+writeRaster(PRAs,file="processed_datasets/PRAs.tif",overwrite=TRUE)
+writeRaster(Confirmed,file="processed_datasets/Confirmed_Beds.tif",overwrite=TRUE)
+
+writeRaster(Seagrass_Cover,file="processed_datasets/Seagrass_Cover_1HA_EA.tif",overwrite=TRUE)
+writeRaster(Total_Predicted_Seagrass_1HA,file="processed_datasets/Total_Predicted_Seagrass_1HA_EA.tif",overwrite=TRUE)
+writeRaster(Total_Predicted_Seagrass_1KM,file="processed_datasets/Total_Predicted_Seagrass_1KM_EA.tif",overwrite=TRUE)
+
+# 1- HECTARE OUTPUT
+write.csv(ES_PRAs_1HA_df,file = "processed_datasets/ES_PRAs_1HA.csv")
+
+writeRaster(ES_PRAs_1HA,file=paste("processed_datasets/",names(ES_PRAs_1HA),"_1HA.tif",sep=""), overwrite=TRUE)
+
+write.csv(ES_Confirmed_1HA_df,file = "processed_datasets/ES_Confirmed_1HA.csv")
+# 
+writeRaster(ES_Confirmed_1HA,file=paste("processed_datasets/",names(ES_Confirmed_1HA),"_1HA.tif",sep=""),overwrite=TRUE)
+
+# 1- SQKM OUTPUT
+write.csv(ES_PRAs_1KM_df,file = "processed_datasets/ES_PRAs_1KM.csv")
+# 
+writeRaster(ES_PRAs_1KM,file=paste("processed_datasets/",names(ES_PRAs_1KM),"_1KM.tif",sep=""),overwrite=TRUE)
+
+write.csv(ES_Confirmed_1KM_df,file = "processed_datasets/ES_Confirmed_1KM.csv")
+# 
+writeRaster(ES_Confirmed_1KM,file=paste("processed_datasets/",names(ES_Confirmed_1KM),"_1KM.tif",sep=""),overwrite=TRUE)
+
+save.image(file = "processed_datasets/ES_ZScores_PRAs_Spatial_Layers.RData")
+```
+

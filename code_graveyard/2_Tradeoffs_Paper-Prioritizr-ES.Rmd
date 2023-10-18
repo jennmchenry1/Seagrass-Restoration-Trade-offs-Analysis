@@ -1,0 +1,735 @@
+---
+title: "2. Seagrass Restoration Trade-offs Paper - Using PrioritizR for identifying potential areas for conservation and restoration to optimize multiple ecosystem service outcomes"
+author: "SE Lester, J McHenry, & A Rassweiler"
+date: "09/27/2023"
+output: 
+  pdf_document:
+    extra_dependencies: float 
+    toc: yes
+    fig_width: 8
+    fig_height: 6
+    fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.pos = "H", out.extra = "")
+
+# install.packages(
+#   "prioritizr",
+#   repos = c(
+#     "https://prioritizr.r-universe.dev",
+#     "https://cloud.r-project.org"
+#   )
+# )
+
+# if (!require(remotes))
+#   install.packages("remotes")
+# remotes::install_github("dirkschumacher/rcbc")
+
+
+library(readr)
+library(prioritizrdata)
+library(prioritizr)
+library(sf)
+library(terra)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(topsis)
+library(withr)
+library(rcbc)
+library(basemaps)
+library(rnaturalearth)
+library(exactextractr)
+
+#Setting Directory Paths
+wd=getwd()
+
+username=as.vector(strsplit(wd,"/"));names(username)<-c("username")
+
+Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disseratation/Seagrass-Restoration-Trade-offs-Analysis",sep="")
+```
+
+
+# Paper Resources
+
+Click [**here**](https://docs.google.com/document/d/1a-w1l9gmgQC8Fafp4zqLbFPMXytu6nq-nX5ImwAyuts/edit) to see the latest meeting notes in the Google Doc. 
+
+Click [**here**](https://cran.r-project.org/web/packages/prioritizr/index.html) to see a tutorial on PrioritizR
+
+Click [**here**](https://cran.r-project.org/web/packages/prioritizr/vignettes/calibrating_trade-offs_tutorial.html) to see a tutorial about calibrating tradeoffs in PrioritizR
+
+
+To Do List:
+- Run the set of PrioritizR configs we discussed at last meeting. i.e., run for 1 ES, 2 ES, 3 ES,... up to 5 to see how much area it takes to select for 5% of each of the ES considered.
+
+
+# Setup (i.e., loading data, setting targets etc). 
+```{r}
+#Predicted Seagrass cover
+Seagrass_Cover <- rast("processed_datasets/Seagrass_Cover_1HA_EA.tif")
+Seagrass_Cover_1KM <-aggregate(Seagrass_Cover, fact=10, fun=mean)
+# Seagrass_Cover_1KM <- mask(Seagrass_Cover_1KM,Confirmed_1KM)
+# names(Seagrass_Cover_1KM) <- c("")
+
+# Confirmed Beds
+NursHab_Confirmed_1KM <- rast("processed_datasets/NursHab_EV_Raw_Confirmed_1KM.tif")
+BlueCar_Confirmed_1KM <- rast("processed_datasets/BlueCarbon_EV_Raw_Confirmed_1KM.tif")
+RecUse_Confirmed_1KM <- rast("processed_datasets/Rec_EV_Raw_Confirmed_1KM.tif")
+CoastProt_Confirmed_1KM <- rast("processed_datasets/Exposure_EV_Raw_Confirmed_1KM.tif")
+Biodiv_Confirmed_1KM <- rast("processed_datasets/BioDiv_EV_Raw_Confirmed_1KM.tif")
+Biodiv_Confirmed_1KM[Biodiv_Confirmed_1KM>1]<-1
+
+ESV_Confirmed_1km <- c(NursHab_Confirmed_1KM,BlueCar_Confirmed_1KM,RecUse_Confirmed_1KM,CoastProt_Confirmed_1KM,Biodiv_Confirmed_1KM)
+ESV_Confirmed_1km[ESV_Confirmed_1km <=0]<-0
+
+Confirmed <-rast("processed_datasets/Confirmed_Beds.tif")
+Confirmed_1KM <-resample(Confirmed,ESV_Confirmed_1km)
+# names(Confirmed_1KM) <- c("")
+
+
+# Potential Recovery Area
+NursHab_PRAs_1KM <- rast("processed_datasets/NursHab_EV_Raw_PRAs_1KM.tif")
+BlueCar_PRAs_1KM <- rast("processed_datasets/BlueCarbon_EV_Raw_PRAs_1KM.tif")
+RecUse_PRAs_1KM <- rast("processed_datasets/Rec_EV_Raw_PRAs_1KM.tif")
+CoastProt_PRAs_1KM <- rast("processed_datasets/Exposure_EV_Raw_PRAs_1KM.tif")
+Biodiv_PRAs_1KM <- rast("processed_datasets/BioDiv_EV_Raw_PRAs_1KM.tif")
+
+ESV_PRAs_1km <- c(NursHab_PRAs_1KM,BlueCar_PRAs_1KM,RecUse_PRAs_1KM,CoastProt_PRAs_1KM,Biodiv_PRAs_1KM)
+ESV_PRAs_1km[ESV_PRAs_1km <=0]<-0
+
+
+PRAs <-rast("processed_datasets/PRAs.tif")
+PRAs_1KM <-resample(PRAs,ESV_PRAs_1km)
+# names(Confirmed_1KM) <- c("")
+
+
+land <- rnaturalearth::ne_countries(scale = 50, returnclass = "sf")[1]
+land <- vect(land)
+newproj <- '+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs'
+land <- terra::project(x=land, y=newproj)
+
+# create targets 
+target_ES1 <- rep(0.05,1)
+target_ES2 <- rep(0.05,2)
+target_ES3 <- rep(0.05,3)
+target_ES4 <- rep(0.05,4)
+target_ES5 <- rep(0.05,5)
+```
+
+\newpage
+
+
+# Functionalizing a prioritization for 1 ES from Confirmed Beds
+```{r}
+# features = ESV_Confirmed_1km
+# area = Confirmed_1KM
+# N = 4
+# targets = target_ES1
+
+Single_Service <- function(area,features,targets){
+  Single_ES_Eval <- NULL
+  No_ES <- c(1,2,3,4,5)
+  # area=Confirmed_1KM
+  # N=1
+  # features=ESV_Confirmed_1km
+  for (N in No_ES){
+  selected_features <- features[[N]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets) %>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # eval_feature_representation_summary(Single_ES_Problem, Single_ES_Solve)
+
+  # plot solution
+  plot(
+    ES_solve, main = paste("Single ES Solution for ",names(selected_features),sep=""),
+    xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  );plot(land, add=TRUE)
+
+  # calculate feature representation
+  N_ES_evaluation <- eval_n_summary(ES_problem, ES_solve)
+  
+  # N_ES_evaluation2 <- eval_feature_representation_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation_output <- NULL
+  
+  N_ES_evaluation_output$Type <- c("Single Service")
+  
+  N_ES_evaluation_output$Order <- N
+
+  N_ES_evaluation_output$ES <- names(selected_features)
+  
+
+  #compiling output
+  N_ES_evaluation_output$Solution_Area<- N_ES_evaluation$n
+  
+  N_ES_evaluation_output <- as.data.frame(N_ES_evaluation_output)
+  
+  solution_mask <- ES_solve
+  solution_mask[solution_mask==0] <- NA
+  
+  Other_ES_evaluation <- mask(x = features, mask=solution_mask,updatevalue=NA)
+
+  NurseryHabitat_Rep <-sum(values(Other_ES_evaluation$NursHab_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$NursHab_EV_Raw_Confirmed),na.rm=TRUE)
+  BlueCarbon_Rep <-sum(values(Other_ES_evaluation$BlueCarbon_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BlueCarbon_EV_Raw_Confirmed),na.rm=TRUE)
+  Recreation_Rep <-sum(values(Other_ES_evaluation$Rec_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Rec_EV_Raw_Confirmed),na.rm=TRUE)
+  CoastalProtection_Rep <-sum(values(Other_ES_evaluation$Exposure_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Exposure_EV_Raw_Confirmed),na.rm=TRUE)
+  Biodiversity_Rep <-sum(values(Other_ES_evaluation$BioDiv_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BioDiv_EV_Raw_Confirmed),na.rm=TRUE)
+
+  Single_ES_Eval<-cbind(N_ES_evaluation_output,NurseryHabitat_Rep,BlueCarbon_Rep,Recreation_Rep,CoastalProtection_Rep,Biodiversity_Rep)
+  }
+  return(Single_ES_Eval)
+}
+
+Single_ES_output <- Single_Service(area= Confirmed_1KM,features = ESV_Confirmed_1km,targets = target_ES1)
+
+```
+
+
+
+
+# Functionalizing a prioritization for 1 ES from Confirmed Beds
+```{r}
+area=Confirmed_1KM
+features=ESV_Confirmed_1km
+targets=target_ES2
+n=9
+
+Two_Services <- function(area,features,targets){
+  Two_ES_Eval <- NULL
+  
+  # 1 - Nursery Habitat, 2- Blue Carbon, 3- Recreation, 4- Coastal Protection, 5, Biodiversity
+  Order1<-c(1,2)
+  Order2<-c(1,3)
+  Order3<-c(1,4)
+  Order4<-c(1,5)
+  Order5<-c(2,3)
+  Order6<-c(2,4)
+  Order7<-c(2,5)
+  Order8<-c(3,4)
+  Order9<-c(3,5)
+  Order10<-c(4,5)
+
+  Order_list <-list(Order1,Order2,Order3,Order4,Order5,Order6,Order7,Order8,Order9,Order10)
+  
+  for (n in Order_list) {
+  selected_order <- n 
+  selected_features <- features[[selected_order]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets)%>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # # plot solution
+  # plot(
+  #   ES_solve, main = paste("Two ES Solution ",names(selected_features)[[]] ,sep=""),
+  #   xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  # );plot(land, add=TRUE)
+
+  # calculate feature representation
+  N_ES_evaluation1 <- eval_n_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation<- eval_feature_representation_summary(ES_problem, ES_solve)
+  N_ES_evaluation$solution_area<-N_ES_evaluation1[[2]]
+  
+  text_order <- paste(selected_order[[1]],selected_order[[2]],"")
+  N_ES_evaluation$Order <- text_order
+  N_ES_evaluation$Type <- c("Two Services")
+  #compiling output
+  
+  N_ES_evaluation <- as.data.frame(N_ES_evaluation)
+  
+  Two_ES_Eval<-rbind(Two_ES_Eval,N_ES_evaluation)
+  }
+  return(Two_ES_Eval)
+}
+
+Two_ES_output <- Two_Services(area= Confirmed_1KM, features = ESV_Confirmed_1km, targets = target_ES2)
+
+```
+
+
+
+# Prioritizing Confirmed Beds for Single Services (Biodiversity Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Single_ES_Raw_Confirmed <- Biodiv_Confirmed_1KM
+
+# build single-zone problem
+Single_ES_Problem <-
+  problem(Confirmed_1KM, Single_ES_Raw_Confirmed) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES1) %>%
+  add_binary_decisions()
+
+# print problem
+print(Single_ES_Problem)
+
+# solve problem
+Single_ES_Solve<- solve(Single_ES_Problem)
+
+# calculate feature representation
+Single_ES_Eval <- eval_n_summary(Single_ES_Problem, Single_ES_Solve)
+
+print(Single_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Single_ES_Problem, Single_ES_Solve)
+
+# plot solution
+plot(
+  Single_ES_Solve, main = "Single ES Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Prioritizing Confirmed Beds for Two Services (Biodiversity & Nursery Habitat Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Two_ES_Raw_Confirmed <- c(Biodiv_Confirmed_1KM,NursHab_Confirmed_1KM)
+
+# build single-zone problem
+Two_ES_Problem <-
+  problem(Confirmed_1KM, Two_ES_Raw_Confirmed) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES2) %>%
+  add_binary_decisions()
+
+# print problem
+print(Two_ES_Problem)
+
+# solve problem
+Two_ES_Solve<- solve(Two_ES_Problem)
+
+# calculate feature representation
+Two_ES_Eval <- eval_n_summary(Two_ES_Problem, Two_ES_Solve)
+
+print(Two_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Two_ES_Problem, Two_ES_Solve)
+
+# plot solution
+plot(
+  Two_ES_Solve, main = "Two Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+\newpage
+
+# Prioritizing Confirmed Beds for Three Services (Biodiversity & Nursery Habitat & Blue Carbon Stock Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Three_ES_Raw_Confirmed <- c(Biodiv_Confirmed_1KM,NursHab_Confirmed_1KM,BlueCar_Confirmed_1KM)
+
+# build single-zone problem
+Three_ES_Problem <-
+  problem(Confirmed_1KM, Three_ES_Raw_Confirmed) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES3) %>%
+  add_binary_decisions()
+
+# print problem
+print(Three_ES_Problem)
+
+# solve problem
+Three_ES_Solve<- solve(Three_ES_Problem)
+
+# calculate feature representation
+Three_ES_Eval <- eval_n_summary(Three_ES_Problem, Three_ES_Solve)
+
+print(Three_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Three_ES_Problem, Three_ES_Solve)
+
+# plot solution
+plot(
+  Three_ES_Solve, main = "Three Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Prioritizing Confirmed Beds for Four Services (Biodiversity & Nursery Habitat & Blue Carbon Stock & Recreation Visitation Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Four_ES_Raw_Confirmed <- c(Biodiv_Confirmed_1KM,NursHab_Confirmed_1KM,BlueCar_Confirmed_1KM,RecUse_Confirmed_1KM)
+
+# build single-zone problem
+Four_ES_Problem <-
+  problem(Confirmed_1KM, Four_ES_Raw_Confirmed) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES4) %>%
+  add_binary_decisions()
+
+# print problem
+print(Four_ES_Problem)
+
+# solve problem
+Four_ES_Solve<- solve(Four_ES_Problem)
+
+# calculate feature representation
+Four_ES_Eval <- eval_n_summary(Four_ES_Problem, Four_ES_Solve)
+
+print(Four_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Four_ES_Problem, Four_ES_Solve)
+
+# plot solution
+plot(
+  Four_ES_Solve, main = "Four Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+# Prioritizing Confirmed Beds for Five Services (Biodiversity & Nursery Habitat & Blue Carbon Stock & Recreation Visitation  & Coastal Protection Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Five_ES_Raw_Confirmed <- c(Biodiv_Confirmed_1KM,NursHab_Confirmed_1KM,BlueCar_Confirmed_1KM,RecUse_Confirmed_1KM,CoastProt_Confirmed_1KM)
+
+# build single-zone problem
+Five_ES_Problem <-
+  problem(Confirmed_1KM, Five_ES_Raw_Confirmed) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES5) %>%
+  add_binary_decisions()
+
+# print problem
+print(Five_ES_Problem)
+
+# solve problem
+Five_ES_Solve<- solve(Five_ES_Problem)
+
+# calculate feature representation
+Five_ES_Eval <- eval_n_summary(Five_ES_Problem, Five_ES_Solve)
+
+print(Five_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Five_ES_Problem, Five_ES_Solve)
+
+
+# plot solution
+plot(
+  Five_ES_Solve, main = "Five Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+
+
+```{r,warning=FALSE}
+Single_ES_Eval$No_ES <- 1
+Two_ES_Eval$No_ES <- 2
+Three_ES_Eval$No_ES <- 3
+Four_ES_Eval$No_ES <- 4
+Five_ES_Eval$No_ES <- 5
+
+Solution_Eval_Metrics_Confirmed_Beds <- rbind(Single_ES_Eval,
+                               Two_ES_Eval,
+                               Three_ES_Eval,
+                               Four_ES_Eval,
+                               Five_ES_Eval)
+
+```
+
+
+
+```{r}
+
+Single_ES_Solve[Single_ES_Solve ==0]<-NA
+Two_ES_Solve[Two_ES_Solve ==0]<-NA
+Three_ES_Solve[Three_ES_Solve ==0]<-NA
+Four_ES_Solve[Four_ES_Solve ==0]<-NA
+Five_ES_Solve[Five_ES_Solve ==0]<-NA
+
+expanse(Single_ES_Solve,"km")
+
+
+require(terra)
+S1_S2 <- expanse(terra::intersect(Single_ES_Solve,Two_ES_Solve),"km")
+S1_S3 <- expanse(terra::intersect(Single_ES_Solve,Three_ES_Solve),"km")
+S1_S4 <- expanse(terra::intersect(Single_ES_Solve,Four_ES_Solve),"km")
+S1_S5 <- expanse(terra::intersect(Single_ES_Solve,Five_ES_Solve),"km")
+S2_S3 <- expanse(terra::intersect(Two_ES_Solve,Three_ES_Solve),"km")
+S2_S4 <- expanse(terra::intersect(Two_ES_Solve, Four_ES_Solve),"km")
+S2_S5 <- expanse(terra::intersect(Two_ES_Solve, Five_ES_Solve),"km")
+S3_S4 <- expanse(terra::intersect(Three_ES_Solve, Four_ES_Solve),"km")
+S3_S5 <- expanse(terra::intersect(Three_ES_Solve, Five_ES_Solve),"km")
+S4_S5 <- expanse(terra::intersect(Four_ES_Solve, Five_ES_Solve),"km")
+
+```
+
+\newpage
+
+# Prioritizing Potential Recovery Areas for Single Services (Biodiversity Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Single_ES_Raw_PRAs <- Biodiv_PRAs_1KM
+
+# build single-zone problem
+Single_ES_Problem <-
+  problem(PRAs_1KM, Single_ES_Raw_PRAs) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES1) %>%
+  add_binary_decisions()
+
+# print problem
+print(Single_ES_Problem)
+
+# solve problem
+Single_ES_Solve<- solve(Single_ES_Problem)
+
+# calculate feature representation
+Single_ES_Eval <- eval_n_summary(Single_ES_Problem, Single_ES_Solve)
+
+print(Single_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Single_ES_Problem, Single_ES_Solve)
+
+# plot solution
+plot(
+  Single_ES_Solve, main = "Single ES Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Prioritizing Potential Recovery Areas for Two Services (Biodiversity & Nursery Habitat Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Two_ES_Raw_PRAs <- c(Biodiv_PRAs_1KM,NursHab_PRAs_1KM)
+
+# build single-zone problem
+Two_ES_Problem <-
+  problem(PRAs_1KM, Two_ES_Raw_PRAs) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES2) %>%
+  add_binary_decisions()
+
+# print problem
+print(Two_ES_Problem)
+
+# solve problem
+Two_ES_Solve<- solve(Two_ES_Problem)
+
+# calculate feature representation
+Two_ES_Eval <- eval_n_summary(Two_ES_Problem, Two_ES_Solve)
+
+print(Two_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Two_ES_Problem, Two_ES_Solve)
+
+# plot solution
+plot(
+  Two_ES_Solve, main = "Two Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Prioritizing Potential Recovery Areas for Three Services (Biodiversity & Nursery Habitat & Blue Carbon Stock Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Three_ES_Raw_PRAs <- c(Biodiv_PRAs_1KM,NursHab_PRAs_1KM,BlueCar_PRAs_1KM)
+
+# build single-zone problem
+Three_ES_Problem <-
+  problem(PRAs_1KM, Three_ES_Raw_PRAs) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES3) %>%
+  add_binary_decisions()
+
+# print problem
+print(Three_ES_Problem)
+
+# solve problem
+Three_ES_Solve<- solve(Three_ES_Problem)
+
+# calculate feature representation
+Three_ES_Eval <- eval_n_summary(Three_ES_Problem, Three_ES_Solve)
+
+print(Three_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Three_ES_Problem, Three_ES_Solve)
+
+# plot solution
+plot(
+  Three_ES_Solve, main = "Three Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Prioritizing Potential Recovery Areas for Four Services (Biodiversity & Nursery Habitat & Blue Carbon Stock & Recreation Visitation Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Four_ES_Raw_PRAs <- c(Biodiv_PRAs_1KM,NursHab_PRAs_1KM,BlueCar_PRAs_1KM,RecUse_PRAs_1KM)
+
+# build single-zone problem
+Four_ES_Problem <-
+  problem(PRAs_1KM, Four_ES_Raw_PRAs) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES4) %>%
+  add_binary_decisions()
+
+# print problem
+print(Four_ES_Problem)
+
+# solve problem
+Four_ES_Solve<- solve(Four_ES_Problem)
+
+# calculate feature representation
+Four_ES_Eval <- eval_n_summary(Four_ES_Problem, Four_ES_Solve)
+
+print(Four_ES_Eval)
+```
+
+
+```{r}
+eval_feature_representation_summary(Four_ES_Problem, Four_ES_Solve)
+
+# plot solution
+plot(
+  Four_ES_Solve, main = "Four Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Prioritizing Potential Recovery Areas for Four Services (Biodiversity & Nursery Habitat & Blue Carbon Stock & Recreation Visitation  & Coastal Protection Enhancement)
+```{r,include=FALSE}
+# https://prioritizr.net/articles/management_zones_tutorial.html
+
+Five_ES_Raw_PRAs <- c(Biodiv_PRAs_1KM,NursHab_PRAs_1KM,BlueCar_PRAs_1KM,RecUse_PRAs_1KM,CoastProt_PRAs_1KM)
+
+# build single-zone problem
+Five_ES_Problem <-
+  problem(PRAs_1KM, Five_ES_Raw_PRAs ) %>%
+  add_min_set_objective()%>%
+  # add_min_shortfall_objective(budget= 6668) %>%
+  # add_boundary_penalties(penalty = 0.003, edge_factor = 0.1)%>%
+  add_relative_targets(target_ES5) %>%
+  add_binary_decisions()
+
+# print problem
+print(Five_ES_Problem)
+
+# solve problem
+Five_ES_Solve<- solve(Five_ES_Problem)
+
+# calculate feature representation
+Five_ES_Eval <- eval_n_summary(Five_ES_Problem, Five_ES_Solve)
+
+print(Five_ES_Eval)
+```
+
+```{r}
+eval_feature_representation_summary(Five_ES_Problem, Five_ES_Solve)
+
+# plot solution
+plot(
+  Five_ES_Solve, main = "Five Services Solution",
+  xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+);
+plot(land, add=TRUE)
+```
+
+\newpage
+
+# Plotting out the number of services vs solution area  
+```{r,warning=FALSE}
+Single_ES_Eval$No_ES <- 1
+Two_ES_Eval$No_ES <- 2
+Three_ES_Eval$No_ES <- 3
+Four_ES_Eval$No_ES <- 4
+Five_ES_Eval$No_ES <- 5
+
+Solution_Eval_Metrics_PRAS <- rbind(Single_ES_Eval,
+                               Two_ES_Eval,
+                               Three_ES_Eval,
+                               Four_ES_Eval,
+                               Five_ES_Eval)
+
+```
+
+```{r}
+
+Solution_Eval_Metrics_PRAS$Zone <- c("PRAs")
+
+Solution_Eval_Metrics_Confirmed_Beds$Zone <- c("Confirmed_Beds")
+
+Solution_Eval_Metrics_BOTH <- rbind(Solution_Eval_Metrics_Confirmed_Beds,Solution_Eval_Metrics_PRAS)
+
+ggplot(Solution_Eval_Metrics_BOTH,aes(y=No_ES,x=n,color=Zone))+geom_point()+geom_line()+facet_wrap(~Zone,scales = "free_x")
+
+```

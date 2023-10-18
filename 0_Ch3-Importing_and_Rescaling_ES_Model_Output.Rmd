@@ -1,0 +1,150 @@
+---
+title: "0-Importing_Rescaling_ES_Outputs"
+author: "Jenn_McHenry"
+date: "03/21/2022"
+output: html_document
+---
+
+# Script Purpose
+
+This script was written with the intention of loading, manipulating, and rescaling the outputs of my ecosystem service models for further analysis. This is part of my dissertation work on marine ecosystem services from seagrasses in Florida. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(virtualspecies)
+library(rgeos)
+library(spatialEco)
+library(climateStability)
+library(devtools)
+# install_github("bleutner/RStoolbox")
+# library(RStoolbox)
+library(sdmvspecies)
+library(dplyr)
+
+wd=getwd()
+
+username=as.vector(strsplit(wd,"/"));names(username)<-c("username")
+
+Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disseratation/",sep="")
+
+```
+
+#loading masking and spatial domain data
+```{r}
+memory.limit(40000)
+
+#Total Predicted_Seagrass
+Seagrass_Cover=rast("input_data/Seagrass_Cover_MeanAnnual_Current_Corrected_CorExp.tif")
+
+names(Seagrass_Cover)<-c("Seagrass_Cover")
+
+#Total Predicted_Seagrass
+Total_Predicted_Seagrass=Seagrass_Cover
+Total_Predicted_Seagrass[Total_Predicted_Seagrass<5]<-NA
+Total_Predicted_Seagrass[Total_Predicted_Seagrass>=5]<-0
+
+#florida shoreline
+fl_shoreline=sf::read_sf("input_data/FL_shoreline.shp")
+
+# Study area
+study_area<-rast("input_data/study_area.tif")
+
+
+#loading data masks
+Miami_Mask=rast("input_data/Miami_Mask_rs.tif")
+Miami_Mask_Mask=resample(x=Miami_Mask,y = study_area)
+
+Dry_Tortugas_Mask=rast("input_data/Miami_DryTortugas_Mask_rs.tif")
+Dry_Tortugas_Mask=resample(x=Dry_Tortugas_Mask,y = study_area)
+
+Atlantic_Mask=vect("input_data/Atlantic_Mask.shp")
+
+study_area=mask(study_area,mask= Miami_Mask_Mask,inverse=TRUE,updatevalue=NA)
+study_area=mask(study_area,mask= Dry_Tortugas_Mask, inverse=TRUE,updatevalue=NA)
+study_area=mask(study_area,mask= Atlantic_Mask, updatevalue=NA)
+writeRaster(study_area,filename = "input_data/study_area.tif",overwrite=TRUE)
+
+#masking the seagrass datasets
+Total_Predicted_Seagrass=mask(Total_Predicted_Seagrass,mask = study_area)
+
+#Confirmed Seagrass Areas
+# Confirmed=rast("input_data/seagrass_area_masks/confirmed_seagrass_beds.tif")
+Confirmed=mask(Confirmed,mask = study_area)
+
+
+#Potential recovery areas
+PRAs=rast("input_data/seagrass_area_masks/potential_recovery_area.tif")
+PRAs=mask(PRAs,mask = study_area)
+
+
+#loading the depth layer
+Depth<-rast("input_data/depth/Depth.tif")
+
+#making depth range layers
+shallow<-Depth
+shallow[shallow > 0]<-NA
+shallow[shallow < -2]<-NA
+shallow=mask(shallow,mask = study_area)
+
+# plot(shallow)
+
+#creatinga  correction factor for the biodiversity data
+deep<-Depth
+deep[deep >= -2]<-NA
+deep[deep < -4]<-NA
+deep=mask(deep,mask = study_area)
+
+# plot(deep)
+
+overlap<-Depth
+overlap[overlap >= -1]<-NA
+overlap[overlap < -3]<-NA
+overlap=mask(overlap,mask = study_area)
+```
+
+
+#prepping Blue Carbon EV datasets
+```{r}
+
+
+#Blue Carbon Stock Enhancement Value
+BC_Storage_EV_Raw=rast("input_data/ES-Original-Outputs/blue_carbon_storage_value_all_suitable_areas.tif")
+BC_Storage_EV_Raw=mask(BC_Storage_EV_Raw,mask=Total_Predicted_Seagrass)
+
+BC_Storage_EV_Raw_Confirmed=mask(BC_Storage_EV_Raw,mask=Confirmed)
+BC_Storage_EV_Raw_PRAs=mask(BC_Storage_EV_Raw,mask=PRAs)
+
+writeRaster(BC_Storage_EV_Raw_Confirmed,filename = "input_data/ES-Model-Outputs/BC_Storage_EV_Raw_Confirmed.tif",overwrite=TRUE)
+
+writeRaster(BC_Storage_EV_Raw_PRAs,filename = "input_data/ES-Model-Outputs/BC_Storage_EV_Raw_PRAs.tif",overwrite=TRUE)
+
+
+
+ls()
+rm(list= ls()[!(ls() %in% c("Atlantic_Mask","Dry_Tortugas_Mask","fl_shoreline",
+                            "Total_Predicted_Seagrass","Confirmed", "Unconfirmed",
+                            "BioDiv_EV_Raw","BioDiv_EV_Raw_Confirmed","BioDiv_EV_Raw_PRAs",
+                             "BioDiv_EV_Perc","BioDiv_EV_Perc_Confirmed", "BioDiv_EV_Perc_PRAs",
+                            "BioDiv_EV_Zscores","BioDiv_EV_Zscores_Confirmed",
+                            "BioDiv_EV_Zscores_PRAs",
+                            "NursHab_EV_Raw",
+                            "NursHab_EV_Raw_Confirmed","NursHab_EV_Raw_PRAs",
+                            "NursHab_EV_Perc","NursHab_EV_Perc_Confirmed","NursHab_EV_Perc_PRAs",
+                            "NursHab_EV_Zscores",
+                            "NursHab_EV_Zscores_Confirmed","NursHab_EV_Zscores_PRAs",
+                            "NursHab_EV_Com_Weighted_Zscores",
+                            "NursHab_EV_Com_Weighted_Zscores_Confirmed",
+                            "NursHab_EV_Com_Weighted_Zscores_PRAs",
+                            "NursHab_EV_Rec_Weighted_Zscores",
+                            "NursHab_EV_Rec_Weighted_Zscores_Confirmed",
+                            "NursHab_EV_Rec_Weighted_Zscores_PRAs",
+                            "BC_Storage_EV_Raw_Confirmed", "BC_Storage_EV_Raw_PRAs",
+                            "BC_Emissions_EV_Raw_Confirmed", "BC_Emissions_EV_Raw_PRAs",
+                            "BC_Emissions_EV_Perc","BC_Emissions_EV_Perc_Confirmed","BC_Emissions_EV_Perc_PRAs",
+                            "BC_SocialCost_EV_Raw_Confirmed", "BC_SocialCost_EV_Raw_PRAs",
+                            "BC_Storage_EV_Zscores_Confirmed", "BC_Storage_EV_Zscores_PRAs",
+                            "study_area",
+                            "Saved_RData_Dir"))])
+```

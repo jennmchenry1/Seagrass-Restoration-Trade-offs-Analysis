@@ -1,0 +1,624 @@
+---
+title: "2. Seagrass Restoration Trade-offs Paper - Using PrioritizR for identifying potential areas for conservation and restoration to optimize multiple ecosystem service outcomes"
+author: "SE Lester, J McHenry, & A Rassweiler"
+date: "09/27/2023"
+output: 
+  pdf_document:
+    extra_dependencies: float 
+    toc: yes
+    fig_width: 8
+    fig_height: 6
+    fig_caption: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.pos = "H", out.extra = "")
+
+# install.packages(
+#   "prioritizr",
+#   repos = c(
+#     "https://prioritizr.r-universe.dev",
+#     "https://cloud.r-project.org"
+#   )
+# )
+
+# if (!require(remotes))
+#   install.packages("remotes")
+# remotes::install_github("dirkschumacher/rcbc")
+
+
+library(readr)
+library(prioritizrdata)
+library(prioritizr)
+library(sf)
+library(terra)
+library(dplyr)
+library(tibble)
+library(ggplot2)
+library(topsis)
+library(withr)
+library(rcbc)
+library(basemaps)
+library(rnaturalearth)
+
+#Setting Directory Paths
+wd=getwd()
+
+username=as.vector(strsplit(wd,"/"));names(username)<-c("username")
+
+Saved_RData_Dir=paste("C:/Users/",username$username[3],"/Dropbox/GITHUB/Disseratation/Seagrass-Restoration-Trade-offs-Analysis",sep="")
+```
+
+
+# Paper Resources
+
+Click [**here**](https://docs.google.com/document/d/1a-w1l9gmgQC8Fafp4zqLbFPMXytu6nq-nX5ImwAyuts/edit) to see the latest meeting notes in the Google Doc. 
+
+Click [**here**](https://cran.r-project.org/web/packages/prioritizr/index.html) to see a tutorial on PrioritizR
+
+Click [**here**](https://cran.r-project.org/web/packages/prioritizr/vignettes/calibrating_trade-offs_tutorial.html) to see a tutorial about calibrating tradeoffs in PrioritizR
+
+
+To Do List:
+- Run the set of PrioritizR configs we discussed at last meeting. i.e., run for 1 ES, 2 ES, 3 ES,... up to 5 to see how much area it takes to select for 5% of each of the ES considered.
+
+
+# Setup (i.e., loading data, setting targets etc). 
+```{r}
+#Predicted Seagrass cover
+Seagrass_Cover <- rast("processed_datasets/Seagrass_Cover_1HA_EA.tif")
+Seagrass_Cover_1KM <-aggregate(Seagrass_Cover, fact=10, fun=mean)
+# Seagrass_Cover_1KM <- mask(Seagrass_Cover_1KM,Confirmed_1KM)
+# names(Seagrass_Cover_1KM) <- c("")
+
+# Confirmed Beds
+NursHab_Confirmed_1KM <- rast("processed_datasets/NursHab_EV_Raw_Confirmed_1KM.tif")
+BlueCar_Confirmed_1KM <- rast("processed_datasets/BlueCarbon_EV_Raw_Confirmed_1KM.tif")
+RecUse_Confirmed_1KM <- rast("processed_datasets/Rec_EV_Raw_Confirmed_1KM.tif")
+CoastProt_Confirmed_1KM <- rast("processed_datasets/Exposure_EV_Raw_Confirmed_1KM.tif")
+Biodiv_Confirmed_1KM <- rast("processed_datasets/BioDiv_EV_Raw_Confirmed_1KM.tif")
+Biodiv_Confirmed_1KM[Biodiv_Confirmed_1KM>1]<-1
+
+ESV_Confirmed_1km <- c(NursHab_Confirmed_1KM,BlueCar_Confirmed_1KM,RecUse_Confirmed_1KM,CoastProt_Confirmed_1KM,Biodiv_Confirmed_1KM)
+ESV_Confirmed_1km[ESV_Confirmed_1km <=0]<-0
+
+Confirmed <-rast("processed_datasets/Confirmed_Beds.tif")
+Confirmed_1KM <-resample(Confirmed,ESV_Confirmed_1km)
+# names(Confirmed_1KM) <- c("")
+
+
+# Potential Recovery Area
+NursHab_PRAs_1KM <- rast("processed_datasets/NursHab_EV_Raw_PRAs_1KM.tif")
+BlueCar_PRAs_1KM <- rast("processed_datasets/BlueCarbon_EV_Raw_PRAs_1KM.tif")
+RecUse_PRAs_1KM <- rast("processed_datasets/Rec_EV_Raw_PRAs_1KM.tif")
+CoastProt_PRAs_1KM <- rast("processed_datasets/Exposure_EV_Raw_PRAs_1KM.tif")
+Biodiv_PRAs_1KM <- rast("processed_datasets/BioDiv_EV_Raw_PRAs_1KM.tif")
+
+ESV_PRAs_1km <- c(NursHab_PRAs_1KM,BlueCar_PRAs_1KM,RecUse_PRAs_1KM,CoastProt_PRAs_1KM,Biodiv_PRAs_1KM)
+ESV_PRAs_1km[ESV_PRAs_1km <=0]<-0
+
+
+PRAs <-rast("processed_datasets/PRAs.tif")
+PRAs_1KM <-resample(PRAs,ESV_PRAs_1km)
+# names(Confirmed_1KM) <- c("")
+
+
+land <- rnaturalearth::ne_countries(scale = 50, returnclass = "sf")[1]
+land <- vect(land)
+newproj <- '+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs'
+land <- terra::project(x=land, y=newproj)
+
+# create targets 
+target_ES1 <- rep(0.05,1)
+target_ES2 <- rep(0.05,2)
+target_ES3 <- rep(0.05,3)
+target_ES4 <- rep(0.05,4)
+target_ES5 <- rep(0.05,5)
+```
+
+\newpage
+
+
+# Functionalizing a prioritization for 1 ES from Confirmed Beds
+```{r}
+# 
+# Single_Service <- function(area,features,targets){
+#   Single_ES_Eval <- NULL
+#   No_ES <- c(1,2,3,4,5)
+#   # area=Confirmed_1KM
+#   # N=1
+#   # features=ESV_Confirmed_1km
+#   for (N in No_ES){
+#   selected_features <- features[[N]]
+#   
+#   ES_problem <- 
+#     problem(area, selected_features) %>%
+#     add_min_set_objective()%>%
+#     add_relative_targets(targets) %>%
+#     add_binary_decisions()
+#   
+#   # solve problem
+#   ES_solve<- solve(ES_problem)
+#   
+#   # eval_feature_representation_summary(Single_ES_Problem, Single_ES_Solve)
+# 
+#   # # plot solution
+#   # plot(
+#   #   ES_solve, main = paste("Single ES Solution for ",names(selected_features),sep=""),
+#   #   xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+#   # );plot(land, add=TRUE)
+# 
+#   # calculate feature representation
+#   N_ES_evaluation1 <- eval_n_summary(ES_problem, ES_solve)
+#   
+#   N_ES_evaluation2 <- eval_feature_representation_summary(ES_problem, ES_solve)
+#   
+#   N_ES_evaluation <- cbind(N_ES_evaluation1,N_ES_evaluation2)
+#   N_ES_evaluation$Order <- N
+#   N_ES_evaluation$no_ES <- 1
+#   N_ES_evaluation$Type <- c("Single Service")
+#   #compiling output
+#   
+#   N_ES_evaluation <- as.data.frame(N_ES_evaluation)
+#   
+#   Single_ES_Eval<-rbind(Single_ES_Eval,N_ES_evaluation)
+#   }
+#   return(Single_ES_Eval)
+# }
+
+
+
+# features = ESV_Confirmed_1km
+# area = Confirmed_1KM
+# N = 4
+# targets = target_ES1
+
+Single_Service <- function(area,features,targets){
+  Single_ES_Eval <- NULL
+  No_ES <- c(1,2,3,4,5)
+  # area=Confirmed_1KM
+  # N=1
+  # features=ESV_Confirmed_1km
+  for (N in No_ES){
+  selected_features <- features[[N]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets) %>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # eval_feature_representation_summary(Single_ES_Problem, Single_ES_Solve)
+
+  # plot solution
+  plot(
+    ES_solve, main = paste("Single ES Solution for ",names(selected_features),sep=""),
+    xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  );plot(land, add=TRUE)
+
+  # calculate feature representation
+  N_ES_evaluation <- eval_n_summary(ES_problem, ES_solve)
+  
+  # N_ES_evaluation2 <- eval_feature_representation_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation_output <- NULL
+  
+  N_ES_evaluation_output$Type <- c("Single Service")
+  
+  N_ES_evaluation_output$Order <- N
+
+  N_ES_evaluation_output$ES <- names(selected_features)
+  
+
+  #compiling output
+  N_ES_evaluation_output$Solution_Area<- N_ES_evaluation$n
+  
+  N_ES_evaluation_output <- as.data.frame(N_ES_evaluation_output)
+  
+  solution_mask <- ES_solve
+  solution_mask[solution_mask==0] <- NA
+  
+  Other_ES_evaluation <- mask(x = features, mask=solution_mask,updatevalue=NA)
+
+  NurseryHabitat_Rep <-sum(values(Other_ES_evaluation$NursHab_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$NursHab_EV_Raw_Confirmed),na.rm=TRUE)
+  BlueCarbon_Rep <-sum(values(Other_ES_evaluation$BlueCarbon_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BlueCarbon_EV_Raw_Confirmed),na.rm=TRUE)
+  Recreation_Rep <-sum(values(Other_ES_evaluation$Rec_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Rec_EV_Raw_Confirmed),na.rm=TRUE)
+  CoastalProtection_Rep <-sum(values(Other_ES_evaluation$Exposure_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Exposure_EV_Raw_Confirmed),na.rm=TRUE)
+  Biodiversity_Rep <-sum(values(Other_ES_evaluation$BioDiv_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BioDiv_EV_Raw_Confirmed),na.rm=TRUE)
+
+  N_ES_evaluation_output<- cbind(N_ES_evaluation_output,NurseryHabitat_Rep,BlueCarbon_Rep,Recreation_Rep,CoastalProtection_Rep,Biodiversity_Rep)
+
+  Single_ES_Eval <- rbind(Single_ES_Eval,N_ES_evaluation_output)
+  }
+  return(Single_ES_Eval)
+}
+
+Single_ES_output <- Single_Service(area= Confirmed_1KM,features = ESV_Confirmed_1km,targets = target_ES1)
+
+print(Single_ES_output)
+# 
+# Single_ES_output_averaged <- Single_ES_output%>%
+#   select(Type,Order,feature,relative_held,n,no_ES)
+# 
+# 
+# names(Single_ES_output_averaged)[5] <- c("solution_area")
+
+```
+
+
+# Functionalizing a prioritization for 2 ES from Confirmed Beds
+```{r}
+
+Two_Services <- function(area,features,targets){
+  Two_ES_Eval <- NULL
+  
+  # 1 - Nursery Habitat, 2- Blue Carbon, 3- Recreation, 4- Coastal Protection, 5, Biodiversity
+  Order1<-c(1,2)
+  Order2<-c(1,3)
+  Order3<-c(1,4)
+  Order4<-c(1,5)
+  Order5<-c(2,3)
+  Order6<-c(2,4)
+  Order7<-c(2,5)
+  Order8<-c(3,4)
+  Order9<-c(3,5)
+  Order10<-c(4,5)
+  
+  Order_list <-list(Order1,Order2,Order3,Order4,Order5,Order6,Order7,Order8,Order9,Order10)
+  
+  for (n in Order_list) {
+  selected_order <- n 
+  selected_features <- features[[selected_order]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets)%>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # # plot solution
+  # plot(
+  #   ES_solve, main = paste("Two ES Solution ",names(selected_features)[[]] ,sep=""),
+  #   xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  # );plot(land, add=TRUE)
+
+  # calculate feature representation
+  N_ES_evaluation <- eval_n_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation_output <- NULL
+  
+  N_ES_evaluation_output$Type <- c("Two Services")
+  
+  text_order <- paste(selected_order[[1]],selected_order[[2]],"")
+  N_ES_evaluation_output$Order <- text_order
+
+
+  #compiling output
+  N_ES_evaluation_output$Solution_Area<- N_ES_evaluation$n
+  
+  N_ES_evaluation_output <- as.data.frame(N_ES_evaluation_output)
+  
+  solution_mask <- ES_solve
+  solution_mask[solution_mask==0] <- NA
+  
+  Other_ES_evaluation <- mask(x = features, mask=solution_mask,updatevalue=NA)
+
+  NurseryHabitat_Rep <-sum(values(Other_ES_evaluation$NursHab_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$NursHab_EV_Raw_Confirmed),na.rm=TRUE)
+  BlueCarbon_Rep <-sum(values(Other_ES_evaluation$BlueCarbon_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BlueCarbon_EV_Raw_Confirmed),na.rm=TRUE)
+  Recreation_Rep <-sum(values(Other_ES_evaluation$Rec_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Rec_EV_Raw_Confirmed),na.rm=TRUE)
+  CoastalProtection_Rep <-sum(values(Other_ES_evaluation$Exposure_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Exposure_EV_Raw_Confirmed),na.rm=TRUE)
+  Biodiversity_Rep <-sum(values(Other_ES_evaluation$BioDiv_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BioDiv_EV_Raw_Confirmed),na.rm=TRUE)
+
+  N_ES_evaluation_output<- cbind(N_ES_evaluation_output,NurseryHabitat_Rep,BlueCarbon_Rep,Recreation_Rep,CoastalProtection_Rep,Biodiversity_Rep)
+
+  Two_ES_Eval<-rbind(Two_ES_Eval,N_ES_evaluation_output)
+  }
+  return(Two_ES_Eval)
+}
+
+Two_ES_output <- Two_Services(area= Confirmed_1KM, features = ESV_Confirmed_1km, targets = target_ES2)
+
+print(Two_ES_output)
+
+# print(Two_ES_output[c(9,2,7,6,5)])
+# 
+# Two_ES_output_averaged <- Two_ES_output%>%
+#   group_by(Type,Order)%>%
+#   summarize(relative_held=mean(relative_held),solution_area=mean(solution_area),no_ES=mean(no_ES))
+```
+
+
+# Functionalizing a prioritization for 3 ES from Confirmed Beds
+```{r}
+# area=Confirmed_1KM
+# features=ESV_Confirmed_1km
+# targets=target_ES2
+# n=5
+
+Three_Services <- function(area,features,targets){
+  Three_ES_Eval <- NULL
+  
+  # 1 - Nursery Habitat, 2- Blue Carbon, 3- Recreation, 4- Coastal Protection, 5, Biodiversity
+  Order1<-c(1,2,3)
+  Order2<-c(1,2,4)
+  Order3<-c(1,2,5)
+  Order4<-c(1,3,4)
+  Order5<-c(1,3,5)
+  Order6<-c(1,4,5)
+  Order7<-c(2,3,4)
+  Order8<-c(2,3,5)
+  Order9<-c(2,4,5)
+  Order10<-c(3,4,5)
+
+  Order_list <-list(Order1,Order2,Order3,Order4,Order5,Order6,Order7,Order8,Order9,Order10)
+  
+  for (i in seq_along(Order_list)) {
+  selected_order <- Order_list[[i]] 
+  selected_features <- features[[selected_order]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets)%>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # # plot solution
+  # plot(
+  #   ES_solve, main = paste("Two ES Solution ",names(selected_features)[[]] ,sep=""),
+  #   xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  # );plot(land, add=TRUE)
+
+   # calculate feature representation
+  N_ES_evaluation <- eval_n_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation_output <- NULL
+  
+  N_ES_evaluation_output$Type <- c("Three Services")
+  
+  text_order <- paste(selected_order[[1]],selected_order[[2]],selected_order[[3]],"")
+  N_ES_evaluation_output$Order <- text_order
+
+
+  #compiling output
+  N_ES_evaluation_output$Solution_Area<- N_ES_evaluation$n
+  
+  N_ES_evaluation_output <- as.data.frame(N_ES_evaluation_output)
+  
+  solution_mask <- ES_solve
+  solution_mask[solution_mask==0] <- NA
+  
+  Other_ES_evaluation <- mask(x = features, mask=solution_mask,updatevalue=NA)
+
+  NurseryHabitat_Rep <-sum(values(Other_ES_evaluation$NursHab_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$NursHab_EV_Raw_Confirmed),na.rm=TRUE)
+  BlueCarbon_Rep <-sum(values(Other_ES_evaluation$BlueCarbon_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BlueCarbon_EV_Raw_Confirmed),na.rm=TRUE)
+  Recreation_Rep <-sum(values(Other_ES_evaluation$Rec_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Rec_EV_Raw_Confirmed),na.rm=TRUE)
+  CoastalProtection_Rep <-sum(values(Other_ES_evaluation$Exposure_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Exposure_EV_Raw_Confirmed),na.rm=TRUE)
+  Biodiversity_Rep <-sum(values(Other_ES_evaluation$BioDiv_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BioDiv_EV_Raw_Confirmed),na.rm=TRUE)
+
+  N_ES_evaluation_output<- cbind(N_ES_evaluation_output,NurseryHabitat_Rep,BlueCarbon_Rep,Recreation_Rep,CoastalProtection_Rep,Biodiversity_Rep)
+  
+  Three_ES_Eval<-rbind(Three_ES_Eval,N_ES_evaluation_output)
+  }
+  return(Three_ES_Eval)
+}
+
+Three_ES_output <- Three_Services(area= Confirmed_1KM, features = ESV_Confirmed_1km, targets = target_ES3)
+print(Three_ES_output)
+
+# print(Three_ES_output[c(9,2,7,6,5)])
+# 
+# Three_ES_output_averaged <- Three_ES_output%>%
+#   group_by(Type,Order)%>%
+#   summarize(relative_held=mean(relative_held),solution_area=mean(solution_area),no_ES=mean(no_ES))
+```
+
+
+
+# Functionalizing a prioritization for 4 ES from Confirmed Beds
+```{r}
+Four_Services <- function(area,features,targets){
+  Four_ES_Eval <- NULL
+  
+  # 1 - Nursery Habitat, 2- Blue Carbon, 3- Recreation, 4- Coastal Protection, 5, Biodiversity
+  Order1<-c(1,2,3,4)
+  Order2<-c(1,2,3,5)
+  Order3<-c(1,2,4,5)
+  Order4<-c(1,3,4,5)
+  Order5<-c(2,3,4,5)
+  
+
+  Order_list <-list(Order1,Order2,Order3,Order4,Order5)
+  
+  for (i in seq_along(Order_list)) {
+  selected_order <- Order_list[[i]] 
+  selected_features <- features[[selected_order]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets)%>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # # plot solution
+  # plot(
+  #   ES_solve, main = paste("Two ES Solution ",names(selected_features)[[]] ,sep=""),
+  #   xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  # );plot(land, add=TRUE)
+
+  # calculate feature representation
+  N_ES_evaluation <- eval_n_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation_output <- NULL
+  
+  N_ES_evaluation_output$Type <- c("Four Services")
+  
+  text_order <- paste(selected_order[[1]],selected_order[[2]],selected_order[[3]],selected_order[[4]],"")
+  N_ES_evaluation_output$Order <- text_order
+
+
+  #compiling output
+  N_ES_evaluation_output$Solution_Area<- N_ES_evaluation$n
+  
+  N_ES_evaluation_output <- as.data.frame(N_ES_evaluation_output)
+  
+  solution_mask <- ES_solve
+  solution_mask[solution_mask==0] <- NA
+  
+  Other_ES_evaluation <- mask(x = features, mask=solution_mask,updatevalue=NA)
+
+  NurseryHabitat_Rep <-sum(values(Other_ES_evaluation$NursHab_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$NursHab_EV_Raw_Confirmed),na.rm=TRUE)
+  BlueCarbon_Rep <-sum(values(Other_ES_evaluation$BlueCarbon_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BlueCarbon_EV_Raw_Confirmed),na.rm=TRUE)
+  Recreation_Rep <-sum(values(Other_ES_evaluation$Rec_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Rec_EV_Raw_Confirmed),na.rm=TRUE)
+  CoastalProtection_Rep <-sum(values(Other_ES_evaluation$Exposure_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Exposure_EV_Raw_Confirmed),na.rm=TRUE)
+  Biodiversity_Rep <-sum(values(Other_ES_evaluation$BioDiv_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BioDiv_EV_Raw_Confirmed),na.rm=TRUE)
+
+  N_ES_evaluation_output<- cbind(N_ES_evaluation_output,NurseryHabitat_Rep,BlueCarbon_Rep,Recreation_Rep,CoastalProtection_Rep,Biodiversity_Rep)
+  
+  Four_ES_Eval<-rbind(Four_ES_Eval,N_ES_evaluation_output)
+  }
+  return(Four_ES_Eval)
+}
+
+Four_ES_output <- Four_Services(area= Confirmed_1KM, features = ESV_Confirmed_1km, targets = target_ES4)
+
+print(Four_ES_output)
+
+# Four_ES_output_averaged <- Four_ES_output%>%
+#   group_by(Type,Order)%>%
+#   summarize(relative_held=mean(relative_held),solution_area=mean(solution_area),no_ES=mean(no_ES))
+```
+
+
+
+# Functionalizing a prioritization for 5 ES from Confirmed Beds
+```{r}
+# area=Confirmed_1KM
+# features=ESV_Confirmed_1km
+# targets=target_ES2
+# n=9
+
+Five_Services <- function(area,features,targets){
+  Five_ES_Eval <- NULL
+  
+  # 1 - Nursery Habitat, 2- Blue Carbon, 3- Recreation, 4- Coastal Protection, 5, Biodiversity
+  Order<-c(1,2,3,4,5)
+  
+  selected_features <- features[[Order]]
+  
+  ES_problem <- 
+    problem(area, selected_features) %>%
+    add_min_set_objective()%>%
+    add_relative_targets(targets)%>%
+    add_binary_decisions()
+  
+  # solve problem
+  ES_solve<- solve(ES_problem)
+  
+  # # plot solution
+  # plot(
+  #   ES_solve, main = paste("Two ES Solution ",names(selected_features)[[]] ,sep=""),
+  #   xlim = c(-0.1, 1.1), ylim = c(-0.1, 1.1), axes = FALSE
+  # );plot(land, add=TRUE)
+
+ # calculate feature representation
+  N_ES_evaluation <- eval_n_summary(ES_problem, ES_solve)
+  
+  N_ES_evaluation_output <- NULL
+  
+  N_ES_evaluation_output$Type <- c("Five Services")
+  
+  text_order <- paste(Order[[1]],Order[[2]],Order[[3]],Order[[4]],Order[[5]],"")
+  N_ES_evaluation_output$Order <- text_order
+
+
+  #compiling output
+  N_ES_evaluation_output$Solution_Area<- N_ES_evaluation$n
+  
+  N_ES_evaluation_output <- as.data.frame(N_ES_evaluation_output)
+  
+  solution_mask <- ES_solve
+  solution_mask[solution_mask==0] <- NA
+  
+  Other_ES_evaluation <- mask(x = features, mask=solution_mask,updatevalue=NA)
+
+  NurseryHabitat_Rep <-sum(values(Other_ES_evaluation$NursHab_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$NursHab_EV_Raw_Confirmed),na.rm=TRUE)
+  BlueCarbon_Rep <-sum(values(Other_ES_evaluation$BlueCarbon_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BlueCarbon_EV_Raw_Confirmed),na.rm=TRUE)
+  Recreation_Rep <-sum(values(Other_ES_evaluation$Rec_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Rec_EV_Raw_Confirmed),na.rm=TRUE)
+  CoastalProtection_Rep <-sum(values(Other_ES_evaluation$Exposure_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$Exposure_EV_Raw_Confirmed),na.rm=TRUE)
+  Biodiversity_Rep <-sum(values(Other_ES_evaluation$BioDiv_EV_Raw_Confirmed,na.rm=TRUE))/sum(values(features$BioDiv_EV_Raw_Confirmed),na.rm=TRUE)
+
+  N_ES_evaluation_output<- cbind(N_ES_evaluation_output,NurseryHabitat_Rep,BlueCarbon_Rep,Recreation_Rep,CoastalProtection_Rep,Biodiversity_Rep)
+  Five_ES_Eval<-rbind(Five_ES_Eval,N_ES_evaluation_output)
+  return(Five_ES_Eval)
+}
+
+Five_ES_output <- Five_Services(area= Confirmed_1KM, features = ESV_Confirmed_1km, targets = target_ES5)
+
+print(Five_ES_output)
+
+# Five_ES_output_averaged <- Five_ES_output%>%
+#   group_by(Type,Order)%>%
+#   summarize(relative_held=mean(relative_held),solution_area=mean(solution_area),no_ES=mean(no_ES))
+
+
+```
+
+
+# Plotting out the number of services vs solution area  
+```{r,warning=FALSE}
+
+Solution_Eval_Metrics_Confrimed_Beds <- rbind(Single_ES_output[c(1:2,4:9)],
+                               Two_ES_output,
+                               Three_ES_output,
+                               Four_ES_output,
+                               Five_ES_output)
+Solution_Eval_Metrics_Confrimed_Beds$Zone <- c("Confirmed_Beds")
+
+write.csv(Solution_Eval_Metrics_Confrimed_Beds,file = "Output/Solution_Evaluation_Metrics_Confirmed_Beds.csv") 
+
+Solution_Eval_Metrics_Confrimed_Beds_long <- Solution_Eval_Metrics_Confrimed_Beds%>%
+  pivot_longer(cols = c(4:8),names_to = "Ecosystem_Services", values_to = "Representation")
+
+
+Solution_Eval_Metrics_Confirmed_Beds_Averaged <- Solution_Eval_Metrics_Confrimed_Beds_long%>%
+  mutate(no_ES = ifelse(Type == "Single Service",1,ifelse(Type == "Two Services",2,ifelse(Type=="Three Services",3,ifelse(Type=="Four Services",4,5)))))%>%
+  group_by(Type,no_ES,Zone,Order)%>%
+  summarize(Solution_Area = mean(Solution_Area),Mean_Representation = mean(Representation))
+
+Solution_Eval_Metrics_Confirmed_Beds_SUPERAVERAGED <- Solution_Eval_Metrics_Confrimed_Beds_long%>%
+  mutate(no_ES = ifelse(Type == "Single Service",1,ifelse(Type == "Two Services",2,ifelse(Type=="Three Services",3,ifelse(Type=="Four Services",4,5)))))%>%
+  group_by(Type,no_ES,Zone)%>%
+  summarize(Solution_Area = mean(Solution_Area),Mean_Representation = mean(Representation))
+
+
+```
+
+```{r}
+
+# Solution Area
+ggplot()+
+  geom_point(data=Solution_Eval_Metrics_Confirmed_Beds_Averaged,aes(y=Solution_Area,x=no_ES,color=Zone))+
+  geom_line(data=Solution_Eval_Metrics_Confirmed_Beds_SUPERAVERAGED,aes(y=Solution_Area,x=no_ES))+
+  theme_classic()+
+  xlab("No of Services")+ ylab("Solution Area (sqkm)")
+
+# Relative ES Level Held
+ggplot()+
+  geom_point(data=Solution_Eval_Metrics_Confirmed_Beds_Averaged,aes(y=Mean_Representation,x=no_ES,color=Zone))+
+  geom_line(data=Solution_Eval_Metrics_Confirmed_Beds_SUPERAVERAGED,aes(y=Mean_Representation,x=no_ES))+
+  theme_classic()+
+  xlab("No of Services")+ ylab("Avg ES Representation (%)")
+
+```
